@@ -21,6 +21,7 @@ fn ArgType(arg: anytype) type {
     return if (@typeInfo(T) == .type)
         arg
     else switch (@typeInfo(T)) {
+        .@"enum" => T,
         .enum_literal => switch (arg) {
             .string => []const u8,
             else => @compileError("Only '.string' is allowed as enum literal, found " ++ @tagName(arg)),
@@ -33,7 +34,7 @@ fn ArgType(arg: anytype) type {
 
 fn default_value(T: type, arg: anytype) ?T {
     return switch (@typeInfo(@TypeOf(arg))) {
-        .comptime_int, .comptime_float => arg,
+        .comptime_int, .comptime_float, .@"enum" => arg,
         else => null,
     };
 }
@@ -53,11 +54,16 @@ pub fn print_help(Args: type) !void {
 
         // TODO:
         // smart length for pretty printing
-        // add default value after the description if there is one
         try stdout.print(
-            "{s:<20}  {s}\n",
+            "{s:<20}  {s}",
             .{ text, @field(tmp, "desc") },
         );
+
+        if (@field(tmp, "default")) |default|
+            try stdout.print(" [default={any}]", .{default});
+
+        try additional_data(stdout, tmp);
+        try stdout.writeAll("\n");
     }
 }
 
@@ -73,10 +79,6 @@ fn arg_name(comptime field: []const u8) []const u8 {
 fn arg_type(comptime field: anytype) []const u8 {
     const default = @field(field, "default");
     const infos = @typeInfo(@TypeOf(default)).optional;
-    // comptime var res: []const u8 = "";
-
-    // @compileLog(infos);
-    // @compileLog(@typeInfo(infos.child));
 
     return switch (@typeInfo(infos.child)) {
         .bool => "",
@@ -93,6 +95,17 @@ fn arg_type(comptime field: anytype) []const u8 {
         },
         else => @compileError("Default value must be bool, enum or strings"),
     };
-    //
-    // return res;
+}
+
+fn additional_data(writer: anytype, field: anytype) !void {
+    const default = @typeInfo(@TypeOf(@field(field, "default"))).optional;
+
+    switch (@typeInfo(default.child)) {
+        .@"enum" => |infos| {
+            try writer.writeAll("\n    Supported values:\n");
+            inline for (infos.fields) |f|
+                try writer.print("        {s}\n", .{f.name});
+        },
+        else => {},
+    }
 }

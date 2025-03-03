@@ -8,7 +8,8 @@ const Args = struct {
     print_ast: Arg(bool) = .{ .desc = "prints AST" },
     // file_path: Arg(.string) = .{ .desc = "file path", .short = "f" },
     count: Arg(5) = .{ .desc = "iteration count", .short = "c" },
-    // size: Arg(Size) = .{ .desc = "size of binary" },
+    size: Arg(Size) = .{ .desc = "size of binary" },
+    other_size: Arg(Size.small) = .{ .desc = "size of binary" },
 };
 
 // TODO:
