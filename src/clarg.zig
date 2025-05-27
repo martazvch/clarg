@@ -5,7 +5,7 @@ pub fn Arg(arg: anytype) type {
 
     return struct {
         desc: []const u8 = "",
-        short: ?[]const u8 = null,
+        short: ?u8 = null,
         default: ?T = default_value(T, arg),
         positional: bool = false,
         required: bool = false,
@@ -56,7 +56,7 @@ pub fn print_help(Args: type) !void {
         comptime var text: []const u8 = "  ";
 
         if (@field(tmp, "short")) |short|
-            text = text ++ "-" ++ short ++ ", ";
+            text = text ++ "-" ++ .{short} ++ ", ";
 
         comptime text = text ++ from_snake(field.name) ++ arg_type(tmp);
 
@@ -87,36 +87,6 @@ fn from_snake(comptime text: []const u8) []const u8 {
 
     inline for (text) |c|
         name = name ++ if (c == '_') "-" else .{c};
-
-    return name;
-}
-
-fn to_snake(text: []const u8) []const u8 {
-    var name: []const u8 = "";
-
-    const State = enum { start, end };
-    var state: State = .start;
-
-    for (text) |c| {
-        if (state == .start and c == '-')
-            continue
-        else
-            state = .end;
-
-        name = name ++ if (c == '-') '_' else c;
-    }
-
-    // s: switch (state) {
-    //     .start => {
-    //         continue :s .end
-    //     },
-    //     .end => {}
-    //
-    // }
-    // inline for (text) |c| {
-    //     if (c == )
-    //     name = name ++ if (c == '_') "-" else .{c};
-    // }
 
     return name;
 }
@@ -171,12 +141,82 @@ fn max_len(Args: type) usize {
     return len;
 }
 
+const KV = struct { []const u8, usize };
+
 pub fn parse(args: *std.process.ArgIterator, Args: type) !Args {
     // Program name
     _ = args.next();
 
+    comptime var kv: []const KV = &.{};
+
+    inline for (@typeInfo(Args).@"struct".fields, 0..) |f, i| {
+        kv = kv ++ .{KV{ f.name, i }};
+    }
+
+    const map = std.StaticStringMap(usize).initComptime(kv);
+    _ = map; // autofix
+
+    var res = Args{};
+
+    const infos = @typeInfo(Args).@"struct";
+
     while (args.next()) |arg| {
-        std.debug.print("Arg: {s}\n", .{to_snake(arg)});
+        const name_range, const value_range = getNameAndValueRanges(@constCast(arg));
+
+        const name = name_range.getText(arg);
+        std.debug.print("Arg: {s}\n", .{name});
+
+        if (value_range) |range| {
+            std.debug.print("Value: {s}\n", .{range.getText(arg)});
+        }
+
+        inline for (infos.fields) |field| if (std.mem.eql(u8, field.name, name)) {
+            std.debug.print("OUI!\n", .{});
+            @field(res, field.name) = undefined;
+        };
     }
     return .{};
+}
+
+const Range = struct {
+    start: usize = 0,
+    end: usize = 0,
+
+    pub fn getText(self: Range, source: []const u8) []const u8 {
+        return source[self.start..self.end];
+    }
+};
+
+fn getNameAndValueRanges(text: []u8) struct { Range, ?Range } {
+    const State = enum { start, name, value };
+
+    var current: usize = 0;
+    var name_range: Range = .{ .end = text.len };
+    var value_range: ?Range = null;
+
+    s: switch (State.start) {
+        .start => {
+            if (text[current] != '-') {
+                name_range.start = current;
+                continue :s .name;
+            }
+            current += 1;
+            continue :s .start;
+        },
+        .name => {
+            if (current == text.len) break :s;
+            if (text[current] == '-') text[current] = '_';
+            if (text[current] == '=') {
+                name_range.end = current;
+                current += 1;
+                continue :s .value;
+            }
+
+            current += 1;
+            continue :s .name;
+        },
+        .value => value_range = .{ .start = current, .end = text.len },
+    }
+
+    return .{ name_range, value_range };
 }

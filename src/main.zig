@@ -6,8 +6,8 @@ const Size = enum { small, medium, big };
 
 const Args = struct {
     print_ast: Arg(bool) = .{ .desc = "prints AST" },
-    file_path: Arg(.string) = .{ .desc = "file path", .short = "f" },
-    count: Arg(5) = .{ .desc = "iteration count", .short = "c" },
+    file_path: Arg(.string) = .{ .desc = "file path", .short = 'f' },
+    count: Arg(5) = .{ .desc = "iteration count", .short = 'c' },
     size: Arg(Size) = .{ .desc = "size of binary" },
     other_size: Arg(Size.small) = .{ .desc = "size of binary" },
     very_long_name_to_print_to_see_what_happens: Arg(bool) = .{ .desc = "very long arg name" },
