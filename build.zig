@@ -14,36 +14,36 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // This creates another `std.Build.Step.Compile`, but this one builds an executable
-    // rather than a static library.
-    const exe = b.addExecutable(.{
-        .name = "clarg",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    exe.root_module.addImport("clarg", clarg_mod);
-
-    b.installArtifact(exe);
-    const run_cmd = b.addRunArtifact(exe);
-    run_cmd.step.dependOn(b.getInstallStep());
-
-    // This allows the user to pass arguments to the application in the build
-    // command itself, like this: `zig build run -- arg1 arg2 etc`
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
+    const example_step = b.step("examples", "Build examples");
+    for ([_][]const u8{
+        "basic",
+    }) |example_name| {
+        const example = b.addExecutable(.{
+            .name = example_name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(b.fmt("examples/{s}.zig", .{example_name})),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{
+                    .{ .name = "clarg", .module = clarg_mod },
+                },
+            }),
+        });
+        const install_example = b.addInstallArtifact(example, .{});
+        example_step.dependOn(&example.step);
+        example_step.dependOn(&install_example.step);
     }
-
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
 
     // --------
     // For ZLS
     // --------
     const exe_check = b.addExecutable(.{
         .name = "foo",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/basic.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     exe_check.root_module.addImport("clarg", clarg_mod);
 

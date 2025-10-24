@@ -19,10 +19,7 @@ const Args = struct {
 };
 
 pub fn main() !void {
-    // const args = Args{};
-    // @compileLog(args);
-
-    try clarg.print_help(Args);
+    try clarg.printHelp(Args);
 
     var dbga = std.heap.DebugAllocator(.{}){};
     const gpa = dbga.allocator();

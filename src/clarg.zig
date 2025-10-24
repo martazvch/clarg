@@ -6,7 +6,7 @@ pub fn Arg(arg: anytype) type {
     return struct {
         desc: []const u8 = "",
         short: ?u8 = null,
-        default: ?T = default_value(T, arg),
+        default: ?T = defaultValue(T, arg),
         positional: bool = false,
         required: bool = false,
     };
@@ -15,8 +15,9 @@ pub fn Arg(arg: anytype) type {
 fn ArgType(arg: anytype) type {
     const T = @TypeOf(arg);
 
-    if (T == @TypeOf(null))
+    if (T == @TypeOf(null)) {
         @compileError("Arg's default value can't be null");
+    }
 
     return if (@typeInfo(T) == .type)
         arg
@@ -32,15 +33,18 @@ fn ArgType(arg: anytype) type {
     };
 }
 
-fn default_value(T: type, arg: anytype) ?T {
+fn defaultValue(T: type, arg: anytype) ?T {
     return switch (@typeInfo(@TypeOf(arg))) {
         .comptime_int, .comptime_float, .@"enum" => arg,
         else => null,
     };
 }
 
-pub fn print_help(Args: type) !void {
-    const stdout = std.io.getStdOut().writer();
+pub fn printHelp(Args: type) !void {
+    var buf: [2048]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&buf);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch unreachable;
 
     if (@hasDecl(Args, "description")) {
         const desc = @field(Args, "description");
@@ -49,16 +53,17 @@ pub fn print_help(Args: type) !void {
 
     try stdout.writeAll("Options:\n");
     // 2 for "--" and 2 for indentation
-    const len = comptime max_len(Args) + 4;
+    const len = comptime maxLen(Args) + 4;
 
     inline for (@typeInfo(Args).@"struct".fields) |field| {
         const tmp = field.defaultValue().?;
         comptime var text: []const u8 = "  ";
 
-        if (@field(tmp, "short")) |short|
+        if (@field(tmp, "short")) |short| {
             text = text ++ "-" ++ .{short} ++ ", ";
+        }
 
-        comptime text = text ++ from_snake(field.name) ++ arg_type(tmp);
+        comptime text = text ++ fromSnake(field.name) ++ argType(tmp);
 
         try stdout.print(
             "{[text]s:<[width]}  {[description]s}",
@@ -66,13 +71,14 @@ pub fn print_help(Args: type) !void {
         );
 
         if (@field(tmp, "default")) |default| {
-            if (@typeInfo(@TypeOf(default)) == .@"enum")
-                try stdout.print(" [default: {s}]", .{@tagName(default)})
-            else
+            if (@typeInfo(@TypeOf(default)) == .@"enum") {
+                try stdout.print(" [default: {t}]", .{default});
+            } else {
                 try stdout.print(" [default: {any}]", .{default});
+            }
         }
 
-        try additional_data(stdout, tmp, len);
+        try additionalData(stdout, tmp, len);
         try stdout.writeAll("\n");
     }
 
@@ -82,16 +88,17 @@ pub fn print_help(Args: type) !void {
     );
 }
 
-fn from_snake(comptime text: []const u8) []const u8 {
+fn fromSnake(comptime text: []const u8) []const u8 {
     comptime var name: []const u8 = "--";
 
-    inline for (text) |c|
+    inline for (text) |c| {
         name = name ++ if (c == '_') "-" else .{c};
+    }
 
     return name;
 }
 
-fn arg_type(comptime field: anytype) []const u8 {
+fn argType(comptime field: anytype) []const u8 {
     const default = @field(field, "default");
     const infos = @typeInfo(@TypeOf(default)).optional;
 
@@ -110,28 +117,23 @@ fn arg_type(comptime field: anytype) []const u8 {
     };
 }
 
-fn additional_data(writer: anytype, field: anytype, comptime padding: usize) !void {
+fn additionalData(writer: anytype, field: anytype, comptime padding: usize) !void {
     const default = @typeInfo(@TypeOf(@field(field, "default"))).optional;
     const pad = " " ** (padding + 4);
 
     switch (@typeInfo(default.child)) {
         .@"enum" => |infos| {
-            try writer.print(
-                "\n{s}Supported values:\n",
-                .{pad},
-            );
+            try writer.print("\n{s}Supported values:\n", .{pad});
 
-            inline for (infos.fields) |f|
-                try writer.print(
-                    "{s}  {s}\n",
-                    .{ pad, f.name },
-                );
+            inline for (infos.fields) |f| {
+                try writer.print("{s}  {s}\n", .{ pad, f.name });
+            }
         },
         else => {},
     }
 }
 
-fn max_len(Args: type) usize {
+fn maxLen(Args: type) usize {
     var len: usize = 0;
 
     inline for (@typeInfo(Args).@"struct".fields) |field| {
@@ -141,23 +143,11 @@ fn max_len(Args: type) usize {
     return len;
 }
 
-const KV = struct { []const u8, usize };
-
 pub fn parse(args: *std.process.ArgIterator, Args: type) !Args {
     // Program name
     _ = args.next();
 
-    comptime var kv: []const KV = &.{};
-
-    inline for (@typeInfo(Args).@"struct".fields, 0..) |f, i| {
-        kv = kv ++ .{KV{ f.name, i }};
-    }
-
-    const map = std.StaticStringMap(usize).initComptime(kv);
-    _ = map; // autofix
-
     var res = Args{};
-
     const infos = @typeInfo(Args).@"struct";
 
     while (args.next()) |arg| {
