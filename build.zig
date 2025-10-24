@@ -54,7 +54,13 @@ pub fn build(b: *std.Build) void {
     //  Tests
     // --------
     const exe_unit_tests = b.addTest(.{
-        .root_module = clarg_mod,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/test.zig"),
+            .target = target,
+            .imports = &.{
+                .{ .name = "clarg", .module = clarg_mod },
+            },
+        }),
     });
 
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
