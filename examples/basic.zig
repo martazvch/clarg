@@ -4,18 +4,26 @@ const Arg = clarg.Arg;
 
 const Size = enum { small, medium, big };
 
-const Args = struct {
-    print_ast: Arg(bool) = .{ .desc = "prints AST" },
-    file_path: Arg(.string) = .{ .desc = "file path", .short = 'f' },
-    count: Arg(5) = .{ .desc = "iteration count", .short = 'c' },
-    size: Arg(Size) = .{ .desc = "size of binary" },
-    other_size: Arg(Size.small) = .{ .desc = "size of binary" },
-    very_long_name_to_print_to_see_what_happens: Arg(bool) = .{ .desc = "very long arg name" },
+// const Args = struct {
+//     print_ast: Arg(bool) = .{ .desc = "prints AST" },
+//     file_path: Arg(.string) = .{ .desc = "file path", .short = 'f' },
+//     dir_path: Arg("/home") = .{ .desc = "file path", .short = 'f' },
+//     count: Arg(5) = .{ .desc = "iteration count", .short = 'c' },
+//     size: Arg(Size) = .{ .desc = "size of binary" },
+//     other_size: Arg(Size.small) = .{ .desc = "size of binary" },
+//     very_long_name_to_print_to_see_what_happens: Arg(bool) = .{ .desc = "very long arg name" },
+//
+//     pub const description =
+//         \\Description of the program
+//         \\it can be anything
+//     ;
+// };
 
-    pub const description =
-        \\Description of the program
-        \\it can be anything
-    ;
+pub const Args = struct {
+    arg1: Arg(bool) = .{},
+    arg2: Arg(i64) = .{},
+    arg3: Arg(f64) = .{},
+    arg4: Arg([]const u8) = .{},
 };
 
 pub fn main() !void {
@@ -28,5 +36,4 @@ pub fn main() !void {
 
     const parsed = try clarg.parse(&args, Args);
     _ = parsed; // autofix
-
 }
