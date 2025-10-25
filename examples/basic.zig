@@ -20,10 +20,11 @@ const Size = enum { small, medium, big };
 // };
 
 pub const Args = struct {
-    arg1: Arg(bool) = .{},
-    arg2: Arg(i64) = .{},
-    arg3: Arg(f64) = .{},
-    arg4: Arg([]const u8) = .{},
+    // arg1: Arg(bool) = .{},
+    arg1: Arg(i64) = .{},
+    arg2: Arg(3) = .{},
+    // arg3: Arg(f64) = .{},
+    // arg4: Arg([]const u8) = .{},
 };
 
 pub fn main() !void {
@@ -34,6 +35,7 @@ pub fn main() !void {
     var args = try std.process.argsWithAllocator(gpa);
     defer args.deinit();
 
-    const parsed = try clarg.parse(&args, Args);
-    _ = parsed; // autofix
+    const parsed = try clarg.parse(Args, &args);
+    std.log.debug("--arg1: {any}", .{parsed.arg1});
+    std.log.debug("--arg2: {}", .{parsed.arg2});
 }

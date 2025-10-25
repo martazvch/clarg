@@ -1,3 +1,3 @@
 test {
-    _ = @import("basic.zig");
+    _ = @import("help.zig");
 }

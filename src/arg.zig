@@ -1,12 +1,15 @@
-pub fn Arg(arg: anytype) type {
-    const T: type = ArgType(arg);
+const std = @import("std");
+const StructField = std.builtin.Type.StructField;
 
+pub fn Arg(arg: anytype) type {
     return struct {
         desc: []const u8 = "",
         short: ?u8 = null,
-        default: ?T = defaultValue(T, arg),
+        default: ?Value = makeDefault(Value, arg),
         positional: bool = false,
         required: bool = false,
+
+        pub const Value: type = ArgType(arg);
     };
 }
 
@@ -40,21 +43,31 @@ fn ArgType(arg: anytype) type {
             break :b []const u8;
         },
         .type => arg,
+        .bool => @compileError("bool literal values aren't necessary, just use 'bool' type as argument"),
         else => @compileError("Unsupported arg type: " ++ @typeName(arg)),
     };
 }
 
 /// If the arg is already a type, return it, otherwise get default value
-fn defaultValue(T: type, arg: anytype) ?T {
+fn makeDefault(T: type, arg: anytype) ?T {
     const info = @typeInfo(@TypeOf(arg));
+    if (T == bool) return false;
     return if (info != .type and info != .enum_literal) arg else null;
 }
 
-pub fn typeStr(field: anytype) []const u8 {
-    const default = @field(field, "default");
-    const infos = @typeInfo(@TypeOf(default)).optional;
+/// Checks wether an argument needs to be defined (no default value and required argument)
+pub fn mandatory(field: StructField) bool {
+    const def = field.defaultValue().?;
+    return @field(def, "default") == null and @field(def, "required");
+}
 
-    return switch (@typeInfo(infos.child)) {
+/// Checks wether an argument needs a value. Only `bool` arguments don't need one
+pub fn needsValue(field: StructField) bool {
+    return @field(field.type, "Value") != bool;
+}
+
+pub fn typeStr(field: StructField) []const u8 {
+    return switch (@typeInfo(@field(field.type, "Value"))) {
         .bool => "",
         .int => " <int>",
         .float => " <float>",
@@ -74,9 +87,46 @@ pub fn maxLen(Args: type) usize {
     var len: usize = 0;
 
     inline for (@typeInfo(Args).@"struct".fields) |field| {
-        const type_len = if (field.defaultValue()) |def| typeStr(def).len else 0;
-        len = @max(len, field.name.len + type_len);
+        const type_and_short_len = if (field.defaultValue()) |def|
+            // 4 for this: '-c, '
+            typeStr(field).len + if (@field(def, "short") != null) 4 else 0
+        else
+            0;
+
+        len = @max(len, field.name.len + type_and_short_len);
     }
 
     return len;
+}
+
+/// Creates a structure with only the fields names and values. Final result of parsing arguments
+pub fn ParsedArgs(Args: type) type {
+    if (@typeInfo(Args) != .@"struct") {
+        @compileError("ParsedArgs can only be used on structures");
+    }
+
+    const info = @typeInfo(Args).@"struct";
+
+    var fields: [info.fields.len]StructField = undefined;
+
+    inline for (info.fields, 0..) |f, i| {
+        const Value = @field(f.type, "Value");
+        const def = @field(f.defaultValue().?, "default");
+        const T, const val = if (def != null) .{ Value, def.? } else .{ ?Value, def };
+
+        fields[i] = .{
+            .name = f.name,
+            .type = T,
+            .default_value_ptr = &val,
+            .is_comptime = false,
+            .alignment = @alignOf(T),
+        };
+    }
+
+    return @Type(.{ .@"struct" = .{
+        .fields = &fields,
+        .decls = &.{},
+        .is_tuple = false,
+        .layout = .auto,
+    } });
 }

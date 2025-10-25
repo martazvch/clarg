@@ -11,11 +11,10 @@ const StructProto = utils.StructProto;
 const Span = utils.Span;
 const fromSnake = utils.fromSnake;
 
-fn additionalData(writer: *Writer, field: anytype, comptime padding: usize) !void {
-    const default = @typeInfo(@TypeOf(@field(field, "default"))).optional;
+fn additionalData(writer: *Writer, field: Type.StructField, comptime padding: usize) !void {
     const pad = " " ** (padding + 4);
 
-    switch (@typeInfo(default.child)) {
+    switch (@typeInfo(@field(field.type, "Value"))) {
         .@"enum" => |infos| {
             try writer.print("\n{s}Supported values:\n", .{pad});
 
@@ -27,38 +26,75 @@ fn additionalData(writer: *Writer, field: anytype, comptime padding: usize) !voi
     }
 }
 
-pub fn parse(cli_args: *std.process.ArgIterator, Args: type) !Args {
-    // Program name
-    _ = cli_args.next();
+/// Parses arguments from the iterator. It must declare a function `next` returning
+/// either `?[]const u8` or `?[:0]const u8`
+pub fn parse(Args: type, args_iter: anytype) !arg.ParsedArgs(Args) {
+    // anytype validation
+    {
+        const T = @TypeOf(if (@typeInfo(@TypeOf(args_iter)) == .pointer) args_iter.* else args_iter);
 
-    var res = Args{};
+        if (!@hasDecl(T, "next")) {
+            @compileError("cli_args's type must have a `next` function");
+        }
+        const ret_type = @typeInfo(@TypeOf(@field(T, "next"))).@"fn".return_type;
+
+        if (ret_type != ?[]const u8 and ret_type != ?[:0]const u8) {
+            @compileError("`next` function must return a `[]const u8` or a `[:0]const u8`");
+        }
+    }
+
+    if (@typeInfo(Args) != .@"struct") {
+        @compileError("Arguments type must be a structure");
+    }
+
+    // Program name
+    _ = args_iter.next();
+
+    var res = arg.ParsedArgs(Args){};
     var proto: StructProto(Args) = .{};
     const infos = @typeInfo(Args).@"struct";
 
-    while (cli_args.next()) |cli_arg| {
-        const name_range, const value_range = getNameAndValueRanges(@constCast(cli_arg));
+    while (args_iter.next()) |argument| {
+        // constCast allow to modify the text inplace to avoid allocation to convert from kebab-cli-syntax
+        // to snake_case structure fields syntaxe
+        const name_range, const value_range = getNameAndValueRanges(@constCast(argument));
 
-        const name = name_range.getText(cli_arg);
-
-        if (value_range) |range| {
-            _ = range; // autofix
-        }
+        const name = name_range.getText(argument);
 
         inline for (infos.fields) |field| if (std.mem.eql(u8, field.name, name)) {
             if (@field(proto, field.name)) {
                 // TODO: error handling
                 @panic("Already parsed option");
             } else {
+                if (value_range) |range| {
+                    @field(res, field.name) = argValue(@field(field.type, "Value"), range.getText(argument)) catch {
+                        @panic("Wrong type");
+                    };
+                }
+                // Otherwise check if value was mandatory
+                else if (arg.needsValue(field)) {
+                    @panic("This field needs a value");
+                }
+
                 @field(proto, field.name) = true;
             }
-
-            @field(res, field.name) = undefined;
         };
     }
 
     return res;
 }
 
+fn argValue(T: type, value: []const u8) error{TypeMismatch}!T {
+    return switch (T) {
+        i64 => std.fmt.parseInt(i64, value, 10) catch error.TypeMismatch,
+        else => |E| {
+            std.log.debug("Got type: {s}", .{@typeName(E)});
+            unreachable;
+        },
+    };
+}
+
+/// Modifies inplace the text to avoid allocation
 fn getNameAndValueRanges(text: []u8) struct { Span, ?Span } {
     const State = enum { start, name, value };
 
@@ -123,7 +159,7 @@ pub fn printHelpToStream(Args: type, stream: *std.Io.Writer) !void {
             text = text ++ "-" ++ .{short} ++ ", ";
         }
 
-        comptime text = text ++ fromSnake(field.name) ++ arg.typeStr(def_val);
+        comptime text = text ++ fromSnake(field.name) ++ arg.typeStr(field);
 
         const desc_field = @field(def_val, "desc");
         if (desc_field.len > 0) {
@@ -140,17 +176,19 @@ pub fn printHelpToStream(Args: type, stream: *std.Io.Writer) !void {
                 try stream.print(" [default: {t}]", .{default});
             } else if (@TypeOf(default) == []const u8) {
                 try stream.print(" [default: \"{s}\"]", .{default});
-            } else {
+            }
+            // We don't print [default: false] for bools
+            else if (@TypeOf(default) != bool) {
                 try stream.print(" [default: {any}]", .{default});
             }
         }
 
-        try additionalData(stream, def_val, len);
+        try additionalData(stream, field, len);
         try stream.writeAll("\n");
     }
 
     try stream.print(
-        "  {[text]s:<[width]}  {[description]s}",
+        "  {[text]s:<[width]}  {[description]s}\n",
         .{ .text = "-h, --help", .description = "prints help", .width = len - 2 },
     );
 }
