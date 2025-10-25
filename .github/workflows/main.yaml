@@ -1,0 +1,20 @@
+name: CI
+on:
+  workflow_dispatch: # Allows manual trigger of the workflow
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false  # Allows all jobs to complete even if one fails
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{matrix.os}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.1
+      - name: build and test
+        run: zig build test

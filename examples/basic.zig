@@ -19,14 +19,6 @@ const Size = enum { small, medium, big };
 //     ;
 // };
 
-pub const Args = struct {
-    // arg1: Arg(bool) = .{},
-    arg1: Arg(i64) = .{},
-    arg2: Arg(3) = .{},
-    arg3: Arg(f64),
-    // arg4: Arg([]const u8) = .{},
-};
-
 // const Args = struct {
 //     arg1: Arg(bool),
 //     arg2: Arg(i64),
@@ -35,14 +27,29 @@ pub const Args = struct {
 //     arg5: Arg(Size),
 // };
 
-pub fn main() !void {
-    try clarg.printHelp(Args);
+const Args = struct {
+    arg1: Arg(bool) = .{},
+    arg2: Arg(4) = .{ .short = 'i' },
+    arg3: Arg(4.5) = .{},
+    arg4: Arg("/home") = .{},
+    arg5: Arg(Size.small) = .{},
+    help: Arg(bool),
+};
 
-    var dbga = std.heap.DebugAllocator(.{}){};
-    const gpa = dbga.allocator();
-    var args = try std.process.argsWithAllocator(gpa);
+pub fn main() !void {
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    var args = try std.process.argsWithAllocator(gpa.allocator());
     defer args.deinit();
 
-    const parsed = try clarg.parse(Args, &args);
-    _ = parsed; // autofix
+    var diag: clarg.Diag = .empty;
+    const parsed = clarg.parse(Args, &args, &diag) catch {
+        try diag.reportToFile(.stderr());
+        std.process.exit(1);
+    };
+
+    if (parsed.help) {
+        try clarg.printHelp(Args);
+    }
 }

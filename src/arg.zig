@@ -5,11 +5,11 @@ pub fn Arg(arg: anytype) type {
     return struct {
         desc: []const u8 = "",
         short: ?u8 = null,
-        default: ?Value = makeDefault(Value, arg),
         positional: bool = false,
         required: bool = false,
 
         pub const Value: type = ArgType(arg);
+        pub const default: ?Value = makeDefault(Value, arg);
     };
 }
 
@@ -52,7 +52,23 @@ fn ArgType(arg: anytype) type {
 fn makeDefault(T: type, arg: anytype) ?T {
     const info = @typeInfo(@TypeOf(arg));
     if (T == bool) return false;
+    if (info == .pointer) return arg; // for strings
+
     return if (info != .type and info != .enum_literal) arg else null;
+}
+
+fn isType(arg: anytype) bool {
+    const info = @typeInfo(@TypeOf(arg));
+
+    if (info == .type) {
+        if (@TypeOf(arg) != bool) return true;
+    }
+
+    if (info == .enum_literal) {
+        return true;
+    }
+
+    return false;
 }
 
 /// Checks wether an argument needs to be defined (no default value and required argument)
@@ -72,7 +88,7 @@ pub fn typeStr(field: StructField) []const u8 {
         .int => " <int>",
         .float => " <float>",
         .@"enum" => " <enum>",
-        .pointer => " <string>",
+        .array, .pointer => " <string>",
         else => unreachable,
     };
 }
@@ -113,16 +129,21 @@ pub fn ParsedArgs(Args: type) type {
         const Value = @field(f.type, "Value");
 
         const T, const val = b: {
-            // Handles case where there is no default value like: `arg1: Arg(i64),`
-            const field_def = f.defaultValue() orelse break :b .{ ?Value, @as(?Value, null) };
-            const def_value = @field(field_def, "default");
-            break :b if (def_value != null) .{ Value, def_value.? } else .{ ?Value, def_value };
+            const def = @field(f.type, "default");
+            if (def == null) break :b .{ ?Value, @as(?Value, null) };
+
+            break :b .{
+                // if (@typeInfo(Value) == .array) []const u8 else Value,
+                Value,
+                // https://ziggit.dev/t/error-comptime-dereference-requires-0-const-u8-to-have-a-well-defined-layout/8200/2
+                def.?,
+            };
         };
 
         fields[i] = .{
             .name = f.name,
             .type = T,
-            .default_value_ptr = &val,
+            .default_value_ptr = if (T == []const u8) @ptrCast(@as(*const []const u8, &val)) else &val,
             .is_comptime = false,
             .alignment = @alignOf(T),
         };
