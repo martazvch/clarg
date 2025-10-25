@@ -23,9 +23,17 @@ pub const Args = struct {
     // arg1: Arg(bool) = .{},
     arg1: Arg(i64) = .{},
     arg2: Arg(3) = .{},
-    // arg3: Arg(f64) = .{},
+    arg3: Arg(f64),
     // arg4: Arg([]const u8) = .{},
 };
+
+// const Args = struct {
+//     arg1: Arg(bool),
+//     arg2: Arg(i64),
+//     arg3: Arg(f64),
+//     arg4: Arg([]const u8),
+//     arg5: Arg(Size),
+// };
 
 pub fn main() !void {
     try clarg.printHelp(Args);
@@ -36,6 +44,5 @@ pub fn main() !void {
     defer args.deinit();
 
     const parsed = try clarg.parse(Args, &args);
-    std.log.debug("--arg1: {any}", .{parsed.arg1});
-    std.log.debug("--arg2: {}", .{parsed.arg2});
+    _ = parsed; // autofix
 }

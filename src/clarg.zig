@@ -152,35 +152,38 @@ pub fn printHelpToStream(Args: type, stream: *std.Io.Writer) !void {
     const len = comptime arg.maxLen(Args) + 4;
 
     inline for (@typeInfo(Args).@"struct".fields) |field| {
-        const def_val = field.defaultValue().?;
         comptime var text: []const u8 = "  ";
 
-        if (@field(def_val, "short")) |short| {
-            text = text ++ "-" ++ .{short} ++ ", ";
-        }
+        if (field.defaultValue()) |def_val| {
+            if (@field(def_val, "short")) |short| {
+                text = text ++ "-" ++ .{short} ++ ", ";
+            }
 
-        comptime text = text ++ fromSnake(field.name) ++ arg.typeStr(field);
+            comptime text = text ++ fromSnake(field.name) ++ arg.typeStr(field);
 
-        const desc_field = @field(def_val, "desc");
-        if (desc_field.len > 0) {
-            try stream.print(
-                "{[text]s:<[width]}  {[description]s}",
-                .{ .text = text, .description = @field(def_val, "desc"), .width = len },
-            );
+            const desc_field = @field(def_val, "desc");
+            if (desc_field.len > 0) {
+                try stream.print(
+                    "{[text]s:<[width]}  {[description]s}",
+                    .{ .text = text, .description = @field(def_val, "desc"), .width = len },
+                );
+            } else {
+                try stream.print("{s}", .{text});
+            }
+
+            if (@field(def_val, "default")) |default| {
+                if (@typeInfo(@TypeOf(default)) == .@"enum") {
+                    try stream.print(" [default: {t}]", .{default});
+                } else if (@TypeOf(default) == []const u8) {
+                    try stream.print(" [default: \"{s}\"]", .{default});
+                }
+                // We don't print [default: false] for bools
+                else if (@TypeOf(default) != bool) {
+                    try stream.print(" [default: {any}]", .{default});
+                }
+            }
         } else {
-            try stream.print("{s}", .{text});
-        }
-
-        if (@field(def_val, "default")) |default| {
-            if (@typeInfo(@TypeOf(default)) == .@"enum") {
-                try stream.print(" [default: {t}]", .{default});
-            } else if (@TypeOf(default) == []const u8) {
-                try stream.print(" [default: \"{s}\"]", .{default});
-            }
-            // We don't print [default: false] for bools
-            else if (@TypeOf(default) != bool) {
-                try stream.print(" [default: {any}]", .{default});
-            }
+            try stream.writeAll("  " ++ comptime fromSnake(field.name) ++ arg.typeStr(field));
         }
 
         try additionalData(stream, field, len);

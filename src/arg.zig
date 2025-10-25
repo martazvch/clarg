@@ -87,13 +87,13 @@ pub fn maxLen(Args: type) usize {
     var len: usize = 0;
 
     inline for (@typeInfo(Args).@"struct".fields) |field| {
-        const type_and_short_len = if (field.defaultValue()) |def|
+        var field_len = typeStr(field).len;
+        if (field.defaultValue()) |def| if (@field(def, "short") != null) {
             // 4 for this: '-c, '
-            typeStr(field).len + if (@field(def, "short") != null) 4 else 0
-        else
-            0;
+            field_len += 4;
+        };
 
-        len = @max(len, field.name.len + type_and_short_len);
+        len = @max(len, field.name.len + field_len);
     }
 
     return len;
@@ -111,8 +111,13 @@ pub fn ParsedArgs(Args: type) type {
 
     inline for (info.fields, 0..) |f, i| {
         const Value = @field(f.type, "Value");
-        const def = @field(f.defaultValue().?, "default");
-        const T, const val = if (def != null) .{ Value, def.? } else .{ ?Value, def };
+
+        const T, const val = b: {
+            // Handles case where there is no default value like: `arg1: Arg(i64),`
+            const field_def = f.defaultValue() orelse break :b .{ ?Value, @as(?Value, null) };
+            const def_value = @field(field_def, "default");
+            break :b if (def_value != null) .{ Value, def_value.? } else .{ ?Value, def_value };
+        };
 
         fields[i] = .{
             .name = f.name,

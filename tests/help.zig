@@ -2,14 +2,24 @@ const std = @import("std");
 const allocator = std.testing.allocator;
 const expectEql = std.testing.expectEqual;
 const clarg = @import("clarg");
+const Arg = clarg.Arg;
 
 const NoColor = "\x1b[0m";
 const Red = "\x1b[31m";
 
 const Error = std.Io.Writer.Error || error{TestExpectedEqual};
 
+// Test common data
+const Size = enum { small, medium, large };
+
 test "type only" {
-    const Args = @import("args.zig").TypeOnlyArgs;
+    const Args = struct {
+        arg1: Arg(bool) = .{ .desc = "First argument" },
+        arg2: Arg(i64) = .{},
+        arg3: Arg(f64) = .{ .desc = "Third argument, this one is a string", .short = 's' },
+        arg4: Arg([]const u8) = .{},
+        arg5: Arg(Size) = .{ .desc = "Choose the size you want", .short = 'p' },
+    };
 
     var wa = std.Io.Writer.Allocating.init(allocator);
     defer wa.deinit();
@@ -38,7 +48,12 @@ test "type only" {
 }
 
 test "default value" {
-    const Args = @import("args.zig").DefValArgs;
+    const Args = struct {
+        arg1: Arg(123) = .{ .desc = "Still the first argument" },
+        arg2: Arg(45.8) = .{ .desc = "Gimme a float", .short = 'f' },
+        arg3: Arg("/home") = .{ .desc = "Bring me home" },
+        arg4: Arg(Size.large) = .{ .desc = "Matter of taste", .short = 's' },
+    };
 
     var wa = std.Io.Writer.Allocating.init(allocator);
     defer wa.deinit();
@@ -66,7 +81,9 @@ test "default value" {
 }
 
 test "clarg enum literal" {
-    const Args = @import("args.zig").ClargEnumLit;
+    const Args = struct {
+        arg1: Arg(.string) = .{ .desc = "Can use this enum literal" },
+    };
 
     var wa = std.Io.Writer.Allocating.init(allocator);
     defer wa.deinit();
