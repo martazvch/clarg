@@ -3,6 +3,8 @@ const allocator = std.testing.allocator;
 const expectEql = std.testing.expectEqual;
 const clarg = @import("clarg");
 const Arg = clarg.Arg;
+const Diag = clarg.Diag;
+const SliceIter = clarg.SliceIter;
 
 const NoColor = "\x1b[0m";
 const Red = "\x1b[31m";
@@ -11,6 +13,14 @@ const Error = std.Io.Writer.Error || error{TestExpectedEqual};
 
 // Test common data
 const Size = enum { small, medium, large };
+
+fn genHelp(Args: type, writer: *std.Io.Writer, prog_name: []const u8) !void {
+    var iter = try SliceIter.fromString(allocator, prog_name);
+    defer iter.deinit(allocator);
+    var diag: Diag = .empty;
+    _ = clarg.parse(Args, &iter, &diag) catch {};
+    try clarg.printHelpToStream(Args, writer);
+}
 
 test "type only" {
     const Args = struct {
@@ -23,13 +33,14 @@ test "type only" {
 
     var wa = std.Io.Writer.Allocating.init(allocator);
     defer wa.deinit();
-    const writer = &wa.writer;
-
-    try clarg.printHelpToStream(Args, writer);
+    try genHelp(Args, &wa.writer, "prog1");
 
     try clargTest(
         @src().fn_name,
-        writer.buffered(),
+        wa.writer.buffered(),
+        \\Usage:
+        \\  prog1 [options] [args]
+        \\
         \\Options:
         \\  --arg1              First argument
         \\  --arg2 <int>
@@ -40,8 +51,6 @@ test "type only" {
         \\                          small
         \\                          medium
         \\                          large
-        \\
-        \\  -h, --help          prints help
         \\
         ,
     );
@@ -57,13 +66,14 @@ test "default value" {
 
     var wa = std.Io.Writer.Allocating.init(allocator);
     defer wa.deinit();
-    const writer = &wa.writer;
-
-    try clarg.printHelpToStream(Args, writer);
+    try genHelp(Args, &wa.writer, "prog2");
 
     try clargTest(
         @src().fn_name,
-        writer.buffered(),
+        wa.writer.buffered(),
+        \\Usage:
+        \\  prog2 [options] [args]
+        \\
         \\Options:
         \\  --arg1 <int>        Still the first argument [default: 123]
         \\  -f, --arg2 <float>  Gimme a float [default: 45.8]
@@ -73,8 +83,6 @@ test "default value" {
         \\                          small
         \\                          medium
         \\                          large
-        \\
-        \\  -h, --help          prints help
         \\
         ,
     );
@@ -87,16 +95,53 @@ test "clarg enum literal" {
 
     var wa = std.Io.Writer.Allocating.init(allocator);
     defer wa.deinit();
-    const writer = &wa.writer;
-
-    try clarg.printHelpToStream(Args, writer);
+    try genHelp(Args, &wa.writer, "prog3");
 
     try clargTest(
         @src().fn_name,
-        writer.buffered(),
+        wa.writer.buffered(),
+        \\Usage:
+        \\  prog3 [options] [args]
+        \\
         \\Options:
         \\  --arg1 <string>  Can use this enum literal
-        \\  -h, --help       prints help
+        \\
+        ,
+    );
+}
+
+test "all categories" {
+    const Args = struct {
+        arg1: Arg(.string) = .{ .desc = "Can use this enum literal" },
+        arg2: Arg("/home") = .{ .desc = "path", .positional = true },
+        it_count: Arg(5) = .{ .desc = "iteration count", .short = 'i' },
+
+        pub const description =
+            \\This is a little program to parse useless data
+            \\and then tries to render them in a nice way
+        ;
+    };
+
+    var wa = std.Io.Writer.Allocating.init(allocator);
+    defer wa.deinit();
+    try genHelp(Args, &wa.writer, "data-visu");
+
+    try clargTest(
+        @src().fn_name,
+        wa.writer.buffered(),
+        \\Usage:
+        \\  data-visu [options] [args]
+        \\
+        \\Description:
+        \\  This is a little program to parse useless data
+        \\  and then tries to render them in a nice way
+        \\
+        \\Arguments:
+        \\  <string>              path [default: "/home"]
+        \\
+        \\Options:
+        \\  --arg1 <string>       Can use this enum literal
+        \\  -i, --it-count <int>  iteration count [default: 5]
         \\
         ,
     );
@@ -111,8 +156,6 @@ fn printErr(comptime fn_name: []const u8, got: []const u8, expect: []const u8) E
 
     var err = false;
     var err_idx: usize = 0;
-    var err_exp: u8 = ' ';
-    var err_got: u8 = ' ';
 
     var wa = std.Io.Writer.Allocating.init(allocator);
     defer wa.deinit();
@@ -133,8 +176,6 @@ fn printErr(comptime fn_name: []const u8, got: []const u8, expect: []const u8) E
         if (!err) {
             err = true;
             err_idx = i;
-            err_exp = expect[i];
-            err_got = got[i];
             try writer.writeAll(Red);
         }
 
@@ -144,9 +185,10 @@ fn printErr(comptime fn_name: []const u8, got: []const u8, expect: []const u8) E
     try writer.writeAll(NoColor);
     const underline = "-" ** (fn_name.len + 11);
 
-    std.debug.print("Difference on char {}, expect '{c}' but got '{c}'\n", .{ err_idx, err_exp, err_got });
+    std.debug.print("Difference on char {}, expect '{c}' but got '{c}'\n", .{ err_idx, expect[err_idx], got[err_idx] });
     std.debug.print("Diff in '{s}':\n{s}\n{s}\n{s}", .{ fn_name, underline, writer.buffered(), underline });
     std.debug.print("\nGot:\n----\n{s}\n{s}\n", .{ got, underline });
+    std.debug.print("\nExpect:\n----\n{s}\n{s}\n", .{ expect, underline });
 
     return error.TestExpectedEqual;
 }

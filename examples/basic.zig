@@ -19,22 +19,27 @@ const Size = enum { small, medium, big };
 //     ;
 // };
 
-// const Args = struct {
-//     arg1: Arg(bool),
-//     arg2: Arg(i64),
-//     arg3: Arg(f64),
-//     arg4: Arg([]const u8),
-//     arg5: Arg(Size),
-// };
-
 const Args = struct {
-    arg1: Arg(bool) = .{},
-    arg2: Arg(4) = .{ .short = 'i' },
-    arg3: Arg(4.5) = .{},
-    arg4: Arg("/home") = .{},
-    arg5: Arg(Size.small) = .{},
-    help: Arg(bool),
+    arg1: Arg(123) = .{ .desc = "Still the first argument" },
+    arg2: Arg(45.8) = .{ .desc = "Gimme a float", .short = 'f' },
+    arg3: Arg("/home") = .{ .desc = "Bring me home", .positional = true },
+    arg4: Arg(Size.big) = .{ .desc = "Matter of taste", .short = 's' },
+    help: Arg(bool) = .{ .short = 'h' },
+
+    pub const description =
+        \\Description of the program
+        \\it can be anything
+    ;
 };
+
+// const Args = struct {
+//     arg1: Arg(bool) = .{},
+//     arg2: Arg(4) = .{ .short = 'i' },
+//     arg3: Arg(4.5) = .{},
+//     arg4: Arg("/home") = .{},
+//     arg5: Arg(Size.small) = .{ .positional = true },
+//     help: Arg(bool) = .{ .short = 'h' },
+// };
 
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};

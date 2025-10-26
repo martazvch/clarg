@@ -7,13 +7,12 @@ const StructProto = utils.StructProto;
 const Span = utils.Span;
 const fromSnake = utils.fromSnake;
 
-// Exported from build system into clarg module
 const arg = @import("arg.zig");
-pub const Arg = arg.Arg;
-pub const Diag = @import("Diagnostic.zig");
-pub const SliceIter = utils.SliceIterator;
+const Diag = @import("Diagnostic.zig");
 
 const Error = error{ AlreadyParsed, WrongValueType, UnknownArg };
+
+var prog_name: ?[]const u8 = null;
 
 fn additionalData(writer: *Writer, field: Type.StructField, comptime padding: usize) !void {
     const pad = " " ** (padding + 4);
@@ -22,8 +21,12 @@ fn additionalData(writer: *Writer, field: Type.StructField, comptime padding: us
         .@"enum" => |infos| {
             try writer.print("\n{s}Supported values:\n", .{pad});
 
-            inline for (infos.fields) |f| {
-                try writer.print("{s}  {s}\n", .{ pad, f.name });
+            inline for (infos.fields, 0..) |f, i| {
+                try writer.print("{s}  {s}{s}", .{
+                    pad,
+                    f.name,
+                    if (i < infos.fields.len - 1) "\n" else "",
+                });
             }
         },
         else => {},
@@ -40,7 +43,7 @@ pub fn parse(Args: type, args_iter: anytype, diag: *Diag) (std.Io.Writer.Error |
     }
 
     // Program name
-    _ = args_iter.next();
+    prog_name = args_iter.next();
 
     var res = arg.ParsedArgs(Args){};
     var proto: StructProto(Args) = .{};
@@ -132,6 +135,7 @@ const ParsedArgRes = struct {
     value: ?Span,
     is_short: bool,
 };
+
 /// Modifies inplace the text to avoid allocation
 fn getNameAndValueRanges(text: []u8) ParsedArgRes {
     const State = enum { start, name, value };
@@ -190,59 +194,138 @@ pub fn printHelp(Args: type) !void {
 }
 
 pub fn printHelpToStream(Args: type, stream: *std.Io.Writer) !void {
-    if (@hasDecl(Args, "description")) {
-        const desc = @field(Args, "description");
-        try stream.print("{s}\n\n", .{desc});
-    }
-
-    try stream.writeAll("Options:\n");
     // 2 for "--" and 2 for indentation
-    const len = comptime arg.maxLen(Args) + 4;
+    const max_len = comptime arg.maxLen(Args) + 4;
+    const info = @typeInfo(Args).@"struct";
 
-    inline for (@typeInfo(Args).@"struct".fields) |field| {
+    // TODO: error
+    const name = prog_name orelse @panic("Should parse args before printing help");
+    try printUsage(name, info, stream);
+    try printDesc(Args, stream);
+    try printCmds(info, stream, max_len);
+    try printPositionals(info, stream, max_len);
+    try printOptions(info, stream, max_len);
+}
+
+fn printUsage(name: []const u8, info: Type.Struct, stream: *Writer) !void {
+    try stream.writeAll("Usage:\n");
+    try stream.print("  {s} [options] [args]\n", .{name});
+
+    var found = false;
+    inline for (info.fields) |field| {
+        if (!found and field.type == arg.Cmd) {
+            found = true;
+            try stream.print("  {s} [command] [options] [args]\n", .{name});
+        }
+    }
+    try stream.writeAll("\n");
+}
+
+fn printDesc(Args: type, stream: *Writer) !void {
+    if (!@hasDecl(Args, "description")) return;
+    try stream.writeAll("Description:\n");
+    var it = std.mem.splitScalar(u8, @field(Args, "description"), '\n');
+
+    while (it.next()) |line| {
+        try stream.print("  {s}\n", .{line});
+    }
+    try stream.writeAll("\n");
+}
+
+fn printCmds(info: Type.Struct, stream: *Writer, comptime max_len: usize) !void {
+    _ = max_len; // autofix
+    _ = info; // autofix
+    _ = stream; // autofix
+}
+
+fn printPositionals(info: Type.Struct, stream: *Writer, comptime max_len: usize) !void {
+    var found = false;
+
+    inline for (info.fields) |field| {
         comptime var text: []const u8 = "  ";
 
         if (field.defaultValue()) |def_val| {
-            if (@field(def_val, "short")) |short| {
-                text = text ++ "-" ++ .{short} ++ ", ";
-            }
+            if (@field(def_val, "positional")) {
+                if (!found) {
+                    try stream.writeAll("Arguments:\n");
+                }
+                found = true;
 
-            comptime text = text ++ fromSnake(field.name) ++ arg.typeStr(field);
+                comptime text = text ++ arg.typeStr(field);
 
-            const desc_field = @field(def_val, "desc");
-            if (desc_field.len > 0) {
-                try stream.print(
-                    "{[text]s:<[width]}  {[description]s}",
-                    .{ .text = text, .description = @field(def_val, "desc"), .width = len },
-                );
-            } else {
-                try stream.print("{s}", .{text});
-            }
-        } else {
-            try stream.writeAll("  " ++ comptime fromSnake(field.name) ++ arg.typeStr(field));
-        }
+                const desc_field = @field(def_val, "desc");
+                if (desc_field.len > 0) {
+                    try stream.print(
+                        "{[text]s:<[width]}  {[description]s}",
+                        .{ .text = text, .description = @field(def_val, "desc"), .width = max_len },
+                    );
+                } else {
+                    try stream.print("{s}", .{text});
+                }
 
-        if (@field(field.type, "default")) |default| {
-            const Def = @TypeOf(default);
-            const info = @typeInfo(Def);
+                try printDefault(field, stream);
+                try additionalData(stream, field, max_len);
 
-            if (info == .@"enum") {
-                try stream.print(" [default: {t}]", .{default});
-            } else if (Def == []const u8) {
-                try stream.print(" [default: \"{s}\"]", .{default});
-            }
-            // We don't print [default: false] for bools
-            else if (Def != bool) {
-                try stream.print(" [default: {any}]", .{default});
+                try stream.writeAll("\n");
             }
         }
-
-        try additionalData(stream, field, len);
-        try stream.writeAll("\n");
     }
 
-    try stream.print(
-        "  {[text]s:<[width]}  {[description]s}\n",
-        .{ .text = "-h, --help", .description = "prints help", .width = len - 2 },
-    );
+    if (found) try stream.writeAll("\n");
+}
+
+fn printOptions(info: Type.Struct, stream: *Writer, comptime max_len: usize) !void {
+    try stream.writeAll("Options:\n");
+
+    inline for (info.fields) |field| {
+        comptime var text: []const u8 = "  ";
+
+        opt: {
+            if (field.defaultValue()) |def_val| {
+                if (@field(def_val, "positional")) {
+                    break :opt;
+                }
+
+                if (@field(def_val, "short")) |short| {
+                    text = text ++ "-" ++ .{short} ++ ", ";
+                }
+
+                comptime text = text ++ fromSnake(field.name) ++ " " ++ arg.typeStr(field);
+
+                const desc_field = @field(def_val, "desc");
+                if (desc_field.len > 0) {
+                    try stream.print(
+                        "{[text]s:<[width]}  {[description]s}",
+                        .{ .text = text, .description = @field(def_val, "desc"), .width = max_len },
+                    );
+                } else {
+                    try stream.print("{s}", .{text});
+                }
+            } else {
+                try stream.writeAll("  " ++ comptime fromSnake(field.name) ++ " " ++ arg.typeStr(field));
+            }
+
+            try printDefault(field, stream);
+            try additionalData(stream, field, max_len);
+
+            try stream.writeAll("\n");
+        }
+    }
+}
+
+fn printDefault(field: Type.StructField, stream: *Writer) !void {
+    if (@field(field.type, "default")) |default| {
+        const Def = @TypeOf(default);
+        const info = @typeInfo(Def);
+
+        if (info == .@"enum") {
+            try stream.print(" [default: {t}]", .{default});
+        } else if (Def == []const u8) {
+            try stream.print(" [default: \"{s}\"]", .{default});
+        }
+        // We don't print [default: false] for bools
+        else if (Def != bool) {
+            try stream.print(" [default: {any}]", .{default});
+        }
+    }
 }

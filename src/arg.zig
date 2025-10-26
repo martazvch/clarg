@@ -57,20 +57,6 @@ fn makeDefault(T: type, arg: anytype) ?T {
     return if (info != .type and info != .enum_literal) arg else null;
 }
 
-fn isType(arg: anytype) bool {
-    const info = @typeInfo(@TypeOf(arg));
-
-    if (info == .type) {
-        if (@TypeOf(arg) != bool) return true;
-    }
-
-    if (info == .enum_literal) {
-        return true;
-    }
-
-    return false;
-}
-
 /// Checks wether an argument needs to be defined (no default value and required argument)
 pub fn mandatory(field: StructField) bool {
     const def = field.defaultValue().?;
@@ -85,10 +71,10 @@ pub fn needsValue(field: StructField) bool {
 pub fn typeStr(field: StructField) []const u8 {
     return switch (@typeInfo(@field(field.type, "Value"))) {
         .bool => "",
-        .int => " <int>",
-        .float => " <float>",
-        .@"enum" => " <enum>",
-        .array, .pointer => " <string>",
+        .int => "<int>",
+        .float => "<float>",
+        .@"enum" => "<enum>",
+        .array, .pointer => "<string>",
         else => unreachable,
     };
 }
@@ -103,9 +89,10 @@ pub fn maxLen(Args: type) usize {
     var len: usize = 0;
 
     inline for (@typeInfo(Args).@"struct".fields) |field| {
-        var field_len = typeStr(field).len;
+        // +1 for space between name and type
+        var field_len = typeStr(field).len + 1;
         if (field.defaultValue()) |def| if (@field(def, "short") != null) {
-            // 4 for this: '-c, '
+            // 4 for this: '-c, ' and 1 for space between name and type
             field_len += 4;
         };
 
@@ -116,6 +103,7 @@ pub fn maxLen(Args: type) usize {
 }
 
 /// Creates a structure with only the fields names and values. Final result of parsing arguments
+/// Adds a 'help' field
 pub fn ParsedArgs(Args: type) type {
     if (@typeInfo(Args) != .@"struct") {
         @compileError("ParsedArgs can only be used on structures");
@@ -132,14 +120,10 @@ pub fn ParsedArgs(Args: type) type {
             const def = @field(f.type, "default");
             if (def == null) break :b .{ ?Value, @as(?Value, null) };
 
-            break :b .{
-                // if (@typeInfo(Value) == .array) []const u8 else Value,
-                Value,
-                // https://ziggit.dev/t/error-comptime-dereference-requires-0-const-u8-to-have-a-well-defined-layout/8200/2
-                def.?,
-            };
+            break :b .{ Value, def.? };
         };
 
+        // https://ziggit.dev/t/error-comptime-dereference-requires-0-const-u8-to-have-a-well-defined-layout/8200/2
         fields[i] = .{
             .name = f.name,
             .type = T,
@@ -156,3 +140,5 @@ pub fn ParsedArgs(Args: type) type {
         .layout = .auto,
     } });
 }
+
+pub const Cmd = struct {};

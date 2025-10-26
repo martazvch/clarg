@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
 
     // We will also create a module for our other entry point, 'main.zig'.
     const clarg_mod = b.createModule(.{
-        .root_source_file = b.path("src/clarg.zig"),
+        .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
