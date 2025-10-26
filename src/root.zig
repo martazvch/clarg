@@ -1,6 +1,6 @@
 const arg = @import("arg.zig");
 pub const Arg = arg.Arg;
-pub const Diag = @import("Diagnostic.zig");
+pub const Diag = @import("Diag.zig");
 
 const utils = @import("utils.zig");
 pub const SliceIter = utils.SliceIterator;

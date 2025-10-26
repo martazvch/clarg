@@ -75,6 +75,7 @@ pub const SliceIterator = struct {
         return .{ .items = items, .index = 0 };
     }
 
+    /// **Warning**: doesn't work properly if there is a string with escaped quotes for an argument's value
     pub fn fromString(allocator: Allocator, string: []const u8) std.mem.Allocator.Error!Self {
         var it = std.mem.splitScalar(u8, string, ' ');
         var items: std.ArrayList([]const u8) = .empty;

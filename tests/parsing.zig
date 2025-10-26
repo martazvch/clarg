@@ -34,7 +34,7 @@ test "type args" {
         try expect(parsed.arg6 == null);
     }
     {
-        var iter = try SliceIter.fromString(allocator, "prog --arg1 --arg2=4 --arg6=medium --arg4=\"config.txt\" --arg3=56.7 --arg5=\"release\"");
+        var iter = try SliceIter.fromString(allocator, "prog --arg1 --arg2=4 --arg6=medium --arg4=config.txt --arg3=56.7 --arg5=release");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
         const parsed = try clarg.parse(Args, &iter, &diag);
@@ -70,7 +70,7 @@ test "value args" {
         try expect(parsed.arg5 == .large);
     }
     {
-        var iter = try SliceIter.fromString(allocator, "prog --arg1 --arg2=4 --arg5=medium --arg4=\"config.txt\" --arg3=56.7");
+        var iter = try SliceIter.fromString(allocator, "prog --arg1 --arg2=4 --arg5=medium --arg4=config.txt --arg3=56.7");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
         const parsed = try clarg.parse(Args, &iter, &diag);
@@ -105,7 +105,7 @@ test "with default value" {
         try expect(parsed.arg5 == .large);
     }
     {
-        var iter = try SliceIter.fromString(allocator, "prog --arg1 --arg2=4 --arg5=medium --arg4=\"config.txt\" --arg3=56.7");
+        var iter = try SliceIter.fromString(allocator, "prog --arg1 --arg2=4 --arg5=medium --arg4=config.txt --arg3=56.7");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
         const parsed = try clarg.parse(Args, &iter, &diag);
@@ -128,7 +128,7 @@ test "short" {
     };
 
     {
-        var iter = try SliceIter.fromString(allocator, "prog -t=small -a -f=98.24 -g=\"file.txt\"");
+        var iter = try SliceIter.fromString(allocator, "prog -t=small -a -f=98.24 -g=file.txt");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
         const parsed = try clarg.parse(Args, &iter, &diag);
@@ -138,5 +138,28 @@ test "short" {
         try expect(parsed.arg3 == 98.24);
         try expect(std.mem.eql(u8, parsed.arg4, "file.txt"));
         try expect(parsed.arg5 == .small);
+    }
+}
+
+test "positional" {
+    const Args = struct {
+        arg1: Arg(bool),
+        arg2: Arg(4),
+        arg3: Arg(65.12) = .{ .positional = true },
+        arg4: Arg("/home") = .{ .short = 'g' },
+        arg5: Arg(Size.large) = .{ .short = 'a', .positional = true },
+    };
+
+    {
+        var iter = try SliceIter.fromString(allocator, "prog 998.123 -arg2=34 --arg1 medium -g=alright");
+        defer iter.deinit(allocator);
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse(Args, &iter, &diag);
+
+        try expect(parsed.arg1);
+        try expect(parsed.arg2 == 34);
+        try expect(parsed.arg3 == 998.123);
+        try expect(std.mem.eql(u8, parsed.arg4, "alright"));
+        try expect(parsed.arg5 == .medium);
     }
 }

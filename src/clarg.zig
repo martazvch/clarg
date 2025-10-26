@@ -8,7 +8,7 @@ const Span = utils.Span;
 const fromSnake = utils.fromSnake;
 
 const arg = @import("arg.zig");
-const Diag = @import("Diagnostic.zig");
+const Diag = @import("Diag.zig");
 
 const Error = error{ AlreadyParsed, WrongValueType, UnknownArg };
 
@@ -42,9 +42,9 @@ pub fn parse(Args: type, args_iter: anytype, diag: *Diag) (std.Io.Writer.Error |
         @compileError("Arguments type must be a structure");
     }
 
-    // Program name
     prog_name = args_iter.next();
 
+    var parsed_positional: usize = 0;
     var res = arg.ParsedArgs(Args){};
     var proto: StructProto(Args) = .{};
     const infos = @typeInfo(Args).@"struct";
@@ -74,6 +74,27 @@ pub fn parse(Args: type, args_iter: anytype, diag: *Diag) (std.Io.Writer.Error |
 
                     @field(proto, field.name) = true;
                     continue :a;
+                }
+            }
+        }
+
+        // Try positional
+        var count: usize = 0;
+
+        inline for (infos.fields) |field| {
+            if (field.defaultValue()) |def| {
+                if (@field(def, "positional")) {
+                    if (count == parsed_positional) {
+                        @field(res, field.name) = argValue(@field(field.type, "Value"), argument) catch {
+                            try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), name });
+                            return error.WrongValueType;
+                        };
+
+                        parsed_positional += 1;
+                        continue :a;
+                    }
+
+                    count += 1;
                 }
             }
         }
