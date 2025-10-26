@@ -1,6 +1,7 @@
 const std = @import("std");
 const clarg = @import("clarg");
 const Arg = clarg.Arg;
+const Cmd = clarg.Cmd;
 
 const Size = enum { small, medium, big };
 
@@ -18,28 +19,25 @@ const Size = enum { small, medium, big };
 //         \\it can be anything
 //     ;
 // };
-
-const Args = struct {
-    arg1: Arg(123) = .{ .desc = "Still the first argument" },
-    arg2: Arg(45.8) = .{ .desc = "Gimme a float", .short = 'f' },
-    arg3: Arg("/home") = .{ .desc = "Bring me home", .positional = true },
-    arg4: Arg(Size.big) = .{ .desc = "Matter of taste", .short = 's' },
+const Op = enum { add, sub, mul, div };
+const CmdArgs = struct {
+    it_count: Arg(5) = .{ .desc = "iteration count", .short = 'i' },
+    op: Arg(Op.add) = .{ .desc = "operation", .short = 'o' },
     help: Arg(bool) = .{ .short = 'h' },
-
-    pub const description =
-        \\Description of the program
-        \\it can be anything
-    ;
 };
 
-// const Args = struct {
-//     arg1: Arg(bool) = .{},
-//     arg2: Arg(4) = .{ .short = 'i' },
-//     arg3: Arg(4.5) = .{},
-//     arg4: Arg("/home") = .{},
-//     arg5: Arg(Size.small) = .{ .positional = true },
-//     help: Arg(bool) = .{ .short = 'h' },
-// };
+const Cmd2Args = struct {
+    print_ir: Arg(bool) = .{ .desc = "prints IR" },
+    dir_path: Arg(.string),
+    help: Arg(bool) = .{ .short = 'h' },
+};
+
+const Args = struct {
+    arg4: Arg(Size.big) = .{ .desc = "Matter of taste", .short = 's' },
+    cmd: Arg(CmdArgs),
+    cmd2: Arg(Cmd2Args) = .{ .desc = "command 2 for IR manipulation" },
+    help: Arg(bool) = .{ .short = 'h' },
+};
 
 pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};

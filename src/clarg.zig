@@ -10,7 +10,7 @@ const fromSnake = utils.fromSnake;
 const arg = @import("arg.zig");
 const Diag = @import("Diag.zig");
 
-const Error = error{ AlreadyParsed, WrongValueType, UnknownArg };
+const Error = error{ AlreadyParsed, WrongValueType, UnknownArg, CmdAfterOpts };
 
 var prog_name: ?[]const u8 = null;
 
@@ -44,6 +44,7 @@ pub fn parse(Args: type, args_iter: anytype, diag: *Diag) (std.Io.Writer.Error |
 
     prog_name = args_iter.next();
 
+    var options_started = false;
     var parsed_positional: usize = 0;
     var res = arg.ParsedArgs(Args){};
     var proto: StructProto(Args) = .{};
@@ -54,6 +55,23 @@ pub fn parse(Args: type, args_iter: anytype, diag: *Diag) (std.Io.Writer.Error |
         // to snake_case structure fields syntaxe
         const arg_parsed = getNameAndValueRanges(@constCast(argument));
         const name = arg_parsed.name.getText(argument);
+
+        // if (arg_parsed.is_cmd) {
+        //     if (options_started) {
+        //         try diag.print("Found command '{s}' after options", .{name});
+        //         return error.CmdAfterOpts;
+        //     }
+        //
+        //     inline for (infos.fields) |field| {
+        //         if (comptime arg.is(field, .cmd)) {
+        //             if (std.mem.eql(u8, field.name, name)) {
+        //                 @field(res, field.name) = try parse(field.type.Value, args_iter, diag);
+        //             }
+        //         }
+        //     }
+        // }
+
+        options_started = true;
 
         inline for (infos.fields) |field| {
             if (matchField(field, arg_parsed.name.getTextEx(argument))) {
@@ -68,7 +86,7 @@ pub fn parse(Args: type, args_iter: anytype, diag: *Diag) (std.Io.Writer.Error |
                         };
                     }
                     // If it's a boolean flag, no value needed
-                    else if (@field(field.type, "Value") == bool) {
+                    else if (field.type.Value == bool) {
                         @field(res, field.name) = true;
                     }
 
@@ -83,7 +101,7 @@ pub fn parse(Args: type, args_iter: anytype, diag: *Diag) (std.Io.Writer.Error |
 
         inline for (infos.fields) |field| {
             if (field.defaultValue()) |def| {
-                if (@field(def, "positional")) {
+                if (def.positional) {
                     if (count == parsed_positional) {
                         @field(res, field.name) = argValue(@field(field.type, "Value"), argument) catch {
                             try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), name });
@@ -155,6 +173,7 @@ const ParsedArgRes = struct {
     name: Span,
     value: ?Span,
     is_short: bool,
+    is_cmd: bool,
 };
 
 /// Modifies inplace the text to avoid allocation
@@ -199,7 +218,7 @@ fn getNameAndValueRanges(text: []u8) ParsedArgRes {
         .value => value = .{ .start = current, .end = if (quote) text.len - 1 else text.len },
     }
 
-    return .{ .name = name, .value = value, .is_short = dashes == 1 };
+    return .{ .name = name, .value = value, .is_short = dashes == 1, .is_cmd = text[0] != '-' };
 }
 
 // ------
@@ -234,7 +253,7 @@ fn printUsage(name: []const u8, info: Type.Struct, stream: *Writer) !void {
 
     var found = false;
     inline for (info.fields) |field| {
-        if (!found and field.type == arg.Cmd) {
+        if (!found and @typeInfo(field.type.Value) == .@"struct") {
             found = true;
             try stream.print("  {s} [command] [options] [args]\n", .{name});
         }
@@ -245,7 +264,7 @@ fn printUsage(name: []const u8, info: Type.Struct, stream: *Writer) !void {
 fn printDesc(Args: type, stream: *Writer) !void {
     if (!@hasDecl(Args, "description")) return;
     try stream.writeAll("Description:\n");
-    var it = std.mem.splitScalar(u8, @field(Args, "description"), '\n');
+    var it = std.mem.splitScalar(u8, Args.description, '\n');
 
     while (it.next()) |line| {
         try stream.print("  {s}\n", .{line});
@@ -254,9 +273,34 @@ fn printDesc(Args: type, stream: *Writer) !void {
 }
 
 fn printCmds(info: Type.Struct, stream: *Writer, comptime max_len: usize) !void {
-    _ = max_len; // autofix
-    _ = info; // autofix
-    _ = stream; // autofix
+    var found = false;
+
+    inline for (info.fields) |field| {
+        if (arg.is(field, .cmd)) {
+            if (!found) {
+                try stream.writeAll("Commands:\n");
+            }
+            found = true;
+
+            if (field.defaultValue()) |def_val| {
+                const desc_field = def_val.desc;
+                if (desc_field.len > 0) {
+                    try stream.print(
+                        "  {[text]s:<[width]}  {[description]s}",
+                        .{ .text = field.name, .description = def_val.desc, .width = max_len },
+                    );
+                } else {
+                    try stream.print("  {s}", .{field.name});
+                }
+            } else {
+                try stream.writeAll("  " ++ field.name);
+            }
+
+            try stream.writeAll("\n");
+        }
+    }
+
+    if (found) try stream.writeAll("\n");
 }
 
 fn printPositionals(info: Type.Struct, stream: *Writer, comptime max_len: usize) !void {
@@ -266,7 +310,7 @@ fn printPositionals(info: Type.Struct, stream: *Writer, comptime max_len: usize)
         comptime var text: []const u8 = "  ";
 
         if (field.defaultValue()) |def_val| {
-            if (@field(def_val, "positional")) {
+            if (comptime arg.is(field, .positional)) {
                 if (!found) {
                     try stream.writeAll("Arguments:\n");
                 }
@@ -278,7 +322,7 @@ fn printPositionals(info: Type.Struct, stream: *Writer, comptime max_len: usize)
                 if (desc_field.len > 0) {
                     try stream.print(
                         "{[text]s:<[width]}  {[description]s}",
-                        .{ .text = text, .description = @field(def_val, "desc"), .width = max_len },
+                        .{ .text = text, .description = def_val.desc, .width = max_len },
                     );
                 } else {
                     try stream.print("{s}", .{text});
@@ -286,7 +330,6 @@ fn printPositionals(info: Type.Struct, stream: *Writer, comptime max_len: usize)
 
                 try printDefault(field, stream);
                 try additionalData(stream, field, max_len);
-
                 try stream.writeAll("\n");
             }
         }
@@ -301,23 +344,19 @@ fn printOptions(info: Type.Struct, stream: *Writer, comptime max_len: usize) !vo
     inline for (info.fields) |field| {
         comptime var text: []const u8 = "  ";
 
-        opt: {
+        if (comptime !(arg.is(field, .cmd) or arg.is(field, .positional))) {
             if (field.defaultValue()) |def_val| {
-                if (@field(def_val, "positional")) {
-                    break :opt;
-                }
-
-                if (@field(def_val, "short")) |short| {
+                if (def_val.short) |short| {
                     text = text ++ "-" ++ .{short} ++ ", ";
                 }
 
                 comptime text = text ++ fromSnake(field.name) ++ " " ++ arg.typeStr(field);
 
-                const desc_field = @field(def_val, "desc");
+                const desc_field = def_val.desc;
                 if (desc_field.len > 0) {
                     try stream.print(
                         "{[text]s:<[width]}  {[description]s}",
-                        .{ .text = text, .description = @field(def_val, "desc"), .width = max_len },
+                        .{ .text = text, .description = def_val.desc, .width = max_len },
                     );
                 } else {
                     try stream.print("{s}", .{text});

@@ -60,12 +60,12 @@ fn makeDefault(T: type, arg: anytype) ?T {
 /// Checks wether an argument needs to be defined (no default value and required argument)
 pub fn mandatory(field: StructField) bool {
     const def = field.defaultValue().?;
-    return @field(def, "default") == null and @field(def, "required");
+    return def.default == null and def.required;
 }
 
 /// Checks wether an argument needs a value. Only `bool` arguments don't need one
 pub fn needsValue(field: StructField) bool {
-    return @field(field.type, "Value") != bool;
+    return field.type.Value != bool;
 }
 
 pub fn typeStr(field: StructField) []const u8 {
@@ -75,7 +75,18 @@ pub fn typeStr(field: StructField) []const u8 {
         .float => "<float>",
         .@"enum" => "<enum>",
         .array, .pointer => "<string>",
+        .@"struct" => "",
         else => unreachable,
+    };
+}
+
+pub fn is(field: StructField, kind: enum { positional, cmd }) bool {
+    return switch (kind) {
+        .cmd => @typeInfo(field.type.Value) == .@"struct",
+        .positional => {
+            const def = field.defaultValue() orelse return false;
+            return def.positional;
+        },
     };
 }
 
@@ -114,13 +125,11 @@ pub fn ParsedArgs(Args: type) type {
     var fields: [info.fields.len]StructField = undefined;
 
     inline for (info.fields, 0..) |f, i| {
-        const Value = @field(f.type, "Value");
+        const Value = f.type.Value;
 
         const T, const val = b: {
-            const def = @field(f.type, "default");
-            if (def == null) break :b .{ ?Value, @as(?Value, null) };
-
-            break :b .{ Value, def.? };
+            const def = f.type.default orelse break :b .{ ?Value, @as(?Value, null) };
+            break :b .{ Value, def };
         };
 
         // https://ziggit.dev/t/error-comptime-dereference-requires-0-const-u8-to-have-a-well-defined-layout/8200/2
@@ -140,5 +149,3 @@ pub fn ParsedArgs(Args: type) type {
         .layout = .auto,
     } });
 }
-
-pub const Cmd = struct {};
