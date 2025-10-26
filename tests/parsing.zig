@@ -1,14 +1,12 @@
 const std = @import("std");
 const allocator = std.testing.allocator;
 const expect = std.testing.expect;
-const expectEql = std.testing.expectEqual;
 const clarg = @import("clarg");
 const Arg = clarg.Arg;
 const Diag = clarg.Diag;
 const SliceIter = clarg.SliceIter;
 
-// Test common data
-const Size = enum { small, medium, large };
+pub const Size = enum { small, medium, large };
 
 test "type args" {
     const Args = struct {
@@ -24,7 +22,7 @@ test "type args" {
         var iter = try SliceIter.fromString(allocator, "");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
-        const parsed = try clarg.parse(Args, &iter, &diag);
+        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
 
         try expect(!parsed.arg1);
         try expect(parsed.arg2 == null);
@@ -34,10 +32,10 @@ test "type args" {
         try expect(parsed.arg6 == null);
     }
     {
-        var iter = try SliceIter.fromString(allocator, "prog --arg1 --arg2=4 --arg6=medium --arg4=config.txt --arg3=56.7 --arg5=release");
+        var iter = try SliceIter.fromString(allocator, "--arg1 --arg2=4 --arg6=medium --arg4=config.txt --arg3=56.7 --arg5=release");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
-        const parsed = try clarg.parse(Args, &iter, &diag);
+        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
 
         try expect(parsed.arg1);
         try expect(parsed.arg2.? == 4);
@@ -61,7 +59,7 @@ test "value args" {
         var iter = try SliceIter.fromString(allocator, "");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
-        const parsed = try clarg.parse(Args, &iter, &diag);
+        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
 
         try expect(parsed.arg1 == false);
         try expect(parsed.arg2 == 4);
@@ -70,10 +68,10 @@ test "value args" {
         try expect(parsed.arg5 == .large);
     }
     {
-        var iter = try SliceIter.fromString(allocator, "prog --arg1 --arg2=4 --arg5=medium --arg4=config.txt --arg3=56.7");
+        var iter = try SliceIter.fromString(allocator, "--arg1 --arg2=4 --arg5=medium --arg4=config.txt --arg3=56.7");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
-        const parsed = try clarg.parse(Args, &iter, &diag);
+        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
 
         try expect(parsed.arg1);
         try expect(parsed.arg2 == 4);
@@ -96,7 +94,7 @@ test "with default value" {
         var iter = try SliceIter.fromString(allocator, "");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
-        const parsed = try clarg.parse(Args, &iter, &diag);
+        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
 
         try expect(parsed.arg1 == false);
         try expect(parsed.arg2 == 4);
@@ -105,10 +103,10 @@ test "with default value" {
         try expect(parsed.arg5 == .large);
     }
     {
-        var iter = try SliceIter.fromString(allocator, "prog --arg1 --arg2=4 --arg5=medium --arg4=config.txt --arg3=56.7");
+        var iter = try SliceIter.fromString(allocator, "--arg1 --arg2=4 --arg5=medium --arg4=config.txt --arg3=56.7");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
-        const parsed = try clarg.parse(Args, &iter, &diag);
+        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
 
         try expect(parsed.arg1);
         try expect(parsed.arg2 == 4);
@@ -128,10 +126,10 @@ test "short" {
     };
 
     {
-        var iter = try SliceIter.fromString(allocator, "prog -t=small -a -f=98.24 -g=file.txt");
+        var iter = try SliceIter.fromString(allocator, "-t=small -a -f=98.24 -g=file.txt");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
-        const parsed = try clarg.parse(Args, &iter, &diag);
+        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
 
         try expect(parsed.arg1);
         try expect(parsed.arg2 == 4);
@@ -151,15 +149,76 @@ test "positional" {
     };
 
     {
-        var iter = try SliceIter.fromString(allocator, "prog 998.123 -arg2=34 --arg1 medium -g=alright");
+        var iter = try SliceIter.fromString(allocator, "998.123 -arg2=34 --arg1 medium -g=alright");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
-        const parsed = try clarg.parse(Args, &iter, &diag);
+        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
 
         try expect(parsed.arg1);
         try expect(parsed.arg2 == 34);
         try expect(parsed.arg3 == 998.123);
         try expect(std.mem.eql(u8, parsed.arg4, "alright"));
         try expect(parsed.arg5 == .medium);
+    }
+}
+
+test "commands" {
+    const Op = enum { add, sub, mul, div };
+    const OpCmdArgs = struct {
+        it_count: Arg(5) = .{ .desc = "iteration count", .short = 'i' },
+        op: Arg(Op.add) = .{ .desc = "operation", .short = 'o' },
+        help: Arg(bool) = .{ .short = 'h' },
+    };
+
+    const CompileCmd = struct {
+        print_ir: Arg(bool) = .{ .desc = "prints IR" },
+        dir_path: Arg("/home") = .{ .short = 'p' },
+        help: Arg(bool) = .{ .short = 'h' },
+    };
+
+    const CmdArgs = struct {
+        arg: Arg(5),
+        size: Arg(Size.large) = .{ .desc = "matter of taste", .short = 's' },
+        cmd: Arg(OpCmdArgs) = .{ .desc = "operates on data" },
+        cmd_compile: Arg(CompileCmd),
+        help: Arg(bool) = .{ .short = 'h' },
+    };
+
+    {
+        // We pass the arg as --it_count because clarg is gonna try to modify it but I feel that
+        // @constCast() an comptime string like this one is the cause of the Bus error.
+        // I don't know how to test it without this hack. Works properly when tried in real.
+        var iter = try SliceIter.fromString(allocator, "cmd -o=mul --it_count=75");
+        defer iter.deinit(allocator);
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse("prog", CmdArgs, &iter, &diag, .{ .skip_first = false });
+
+        try expect(parsed.arg == 5);
+        try expect(parsed.size == .large);
+        try expect(parsed.cmd != null);
+        try expect(parsed.cmd_compile == null);
+        try expect(!parsed.help);
+
+        const cmd = parsed.cmd orelse unreachable;
+        try expect(cmd.it_count == 75);
+        try expect(cmd.op == .mul);
+    }
+
+    {
+        // We pass the cmd as cmd_compile for the same reason as above
+        var iter = try SliceIter.fromString(allocator, "cmd_compile -p=myplace --print_ir");
+        defer iter.deinit(allocator);
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse("prog", CmdArgs, &iter, &diag, .{ .skip_first = false });
+
+        try expect(parsed.arg == 5);
+        try expect(parsed.size == .large);
+        try expect(parsed.cmd == null);
+        try expect(parsed.cmd_compile != null);
+        try expect(!parsed.help);
+
+        const cmd = parsed.cmd_compile orelse unreachable;
+        try expect(cmd.print_ir);
+        try expect(std.mem.eql(u8, cmd.dir_path, "myplace"));
     }
 }

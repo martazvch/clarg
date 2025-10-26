@@ -15,7 +15,7 @@ fn clargTest(Args: type, cli_args: []const u8, err_msg: []const u8) !void {
     var iter = try SliceIter.fromString(allocator, cli_args);
     defer iter.deinit(allocator);
     var diag: Diag = .empty;
-    _ = clarg.parse(Args, &iter, &diag) catch {
+    _ = clarg.parse("", Args, &iter, &diag, .{ .skip_first = false }) catch {
         try expect(eql(u8, err_msg, diag.report()));
     };
 }
@@ -29,8 +29,8 @@ test "value args" {
         arg5: Arg(Size.large),
     };
 
-    try clargTest(Args, "prog --arg6", "Unknown argument 'arg6'");
-    try clargTest(Args, "prog --arg2=6 --arg2=65", "Already parsed argument 'arg2' (or its long/short version)");
-    try clargTest(Args, "prog --arg2=5 -i=9", "Already parsed argument 'i' (or its long/short version)");
-    try clargTest(Args, "prog --arg4=true", "Expect a value of type 'string' for argument 'arg4'");
+    try clargTest(Args, "--arg6", "Unknown argument 'arg6'");
+    try clargTest(Args, "--arg2=6 --arg2=65", "Already parsed argument 'arg2' (or its long/short version)");
+    try clargTest(Args, "--arg2=5 -i=9", "Already parsed argument 'i' (or its long/short version)");
+    try clargTest(Args, "--arg4=true", "Expect a value of type 'string' for argument 'arg4'");
 }

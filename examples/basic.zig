@@ -3,7 +3,7 @@ const clarg = @import("clarg");
 const Arg = clarg.Arg;
 const Cmd = clarg.Cmd;
 
-const Size = enum { small, medium, big };
+const Size = enum { small, medium, large };
 
 // const Args = struct {
 //     print_ast: Arg(bool) = .{ .desc = "prints AST" },
@@ -20,22 +20,23 @@ const Size = enum { small, medium, big };
 //     ;
 // };
 const Op = enum { add, sub, mul, div };
-const CmdArgs = struct {
+const OpCmdArgs = struct {
     it_count: Arg(5) = .{ .desc = "iteration count", .short = 'i' },
     op: Arg(Op.add) = .{ .desc = "operation", .short = 'o' },
     help: Arg(bool) = .{ .short = 'h' },
 };
 
-const Cmd2Args = struct {
+const CompileCmd = struct {
     print_ir: Arg(bool) = .{ .desc = "prints IR" },
-    dir_path: Arg(.string),
+    dir_path: Arg("/home"),
     help: Arg(bool) = .{ .short = 'h' },
 };
 
 const Args = struct {
-    arg4: Arg(Size.big) = .{ .desc = "Matter of taste", .short = 's' },
-    cmd: Arg(CmdArgs),
-    cmd2: Arg(Cmd2Args) = .{ .desc = "command 2 for IR manipulation" },
+    arg_arg: Arg(5),
+    size: Arg(Size.large) = .{ .desc = "matter of taste", .short = 's' },
+    cmd: Arg(OpCmdArgs) = .{ .desc = "operates on data" },
+    cmd_compile: Arg(CompileCmd),
     help: Arg(bool) = .{ .short = 'h' },
 };
 
@@ -43,16 +44,22 @@ pub fn main() !void {
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
 
+    var diag: clarg.Diag = .empty;
     var args = try std.process.argsWithAllocator(gpa.allocator());
     defer args.deinit();
 
-    var diag: clarg.Diag = .empty;
-    const parsed = clarg.parse(Args, &args, &diag) catch {
+    const parsed = clarg.parse("basic", Args, &args, &diag, .{}) catch {
         try diag.reportToFile(.stderr());
         std.process.exit(1);
     };
 
     if (parsed.help) {
         try clarg.printHelp(Args);
+    }
+
+    if (parsed.cmd_compile) |cmd| {
+        if (cmd.help) {
+            try clarg.printHelp(CompileCmd);
+        }
     }
 }

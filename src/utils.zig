@@ -64,6 +64,17 @@ pub fn fromSnake(comptime text: []const u8) []const u8 {
     return name;
 }
 
+/// Convert snake case to kind of kebab case with '--' at the beginning
+pub fn fromSnakeNoDash(comptime text: []const u8) []const u8 {
+    comptime var name: []const u8 = "";
+
+    inline for (text) |c| {
+        name = name ++ if (c == '_') "-" else .{c};
+    }
+
+    return name;
+}
+
 /// Creates an iterator from an array of slices
 pub const SliceIterator = struct {
     items: []const []const u8,
@@ -77,6 +88,10 @@ pub const SliceIterator = struct {
 
     /// **Warning**: doesn't work properly if there is a string with escaped quotes for an argument's value
     pub fn fromString(allocator: Allocator, string: []const u8) std.mem.Allocator.Error!Self {
+        if (std.mem.trim(u8, string, " ").len == 0) {
+            return .{ .items = &.{}, .index = 0 };
+        }
+
         var it = std.mem.splitScalar(u8, string, ' ');
         var items: std.ArrayList([]const u8) = .empty;
 

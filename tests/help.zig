@@ -1,6 +1,5 @@
 const std = @import("std");
 const allocator = std.testing.allocator;
-const expectEql = std.testing.expectEqual;
 const clarg = @import("clarg");
 const Arg = clarg.Arg;
 const Diag = clarg.Diag;
@@ -11,14 +10,13 @@ const Red = "\x1b[31m";
 
 const Error = std.Io.Writer.Error || error{TestExpectedEqual};
 
-// Test common data
-const Size = enum { small, medium, large };
+pub const Size = enum { small, medium, large };
 
 fn genHelp(Args: type, writer: *std.Io.Writer, prog_name: []const u8) !void {
-    var iter = try SliceIter.fromString(allocator, prog_name);
+    var iter = try SliceIter.fromString(allocator, "");
     defer iter.deinit(allocator);
     var diag: Diag = .empty;
-    _ = clarg.parse(Args, &iter, &diag) catch {};
+    _ = clarg.parse(prog_name, Args, &iter, &diag, .{ .skip_first = false }) catch {};
     try clarg.printHelpToStream(Args, writer);
 }
 
@@ -145,6 +143,105 @@ test "all categories" {
         \\
         ,
     );
+}
+
+test "commands" {
+    const Op = enum { add, sub, mul, div };
+    const OpCmdArgs = struct {
+        it_count: Arg(5) = .{ .desc = "iteration count", .short = 'i' },
+        op: Arg(Op.add) = .{ .desc = "operation", .short = 'o' },
+        help: Arg(bool) = .{ .short = 'h' },
+    };
+
+    const CompileCmd = struct {
+        print_ir: Arg(bool) = .{ .desc = "prints IR" },
+        dir_path: Arg("/home") = .{ .short = 'p' },
+        help: Arg(bool) = .{ .short = 'h' },
+    };
+
+    const Args = struct {
+        arg_arg: Arg(5),
+        size: Arg(Size.large) = .{ .desc = "matter of taste", .short = 's' },
+        cmd: Arg(OpCmdArgs) = .{ .desc = "operates on data" },
+        cmd_compile: Arg(CompileCmd),
+        help: Arg(bool) = .{ .short = 'h' },
+    };
+
+    {
+        var wa = std.Io.Writer.Allocating.init(allocator);
+        defer wa.deinit();
+        try genHelp(Args, &wa.writer, "rover");
+
+        try clargTest(
+            @src().fn_name,
+            wa.writer.buffered(),
+            \\Usage:
+            \\  rover [options] [args]
+            \\  rover [commands] [options] [args]
+            \\
+            \\Commands:
+            \\  cmd                operates on data
+            \\  cmd-compile
+            \\
+            \\Options:
+            \\  --arg-arg <int> [default: 5]
+            \\  -s, --size <enum>  matter of taste [default: large]
+            \\                       Supported values:
+            \\                         small
+            \\                         medium
+            \\                         large
+            \\  -h, --help
+            \\
+            ,
+        );
+    }
+    {
+        var wa = std.Io.Writer.Allocating.init(allocator);
+        defer wa.deinit();
+        try genHelp(OpCmdArgs, &wa.writer, "rover");
+
+        try clargTest(
+            @src().fn_name,
+            wa.writer.buffered(),
+            \\Usage:
+            \\  rover [options] [args]
+            \\
+            \\Options:
+            \\  -i, --it-count <int>  iteration count [default: 5]
+            \\  -o, --op <enum>       operation [default: add]
+            \\                          Supported values:
+            \\                            add
+            \\                            sub
+            \\                            mul
+            \\                            div
+            \\  -h, --help
+            \\
+            ,
+        );
+    }
+
+    {
+        var wa = std.Io.Writer.Allocating.init(allocator);
+        defer wa.deinit();
+        // We pass the arg as cmd_compile because clarg is gonna try to modify it but I feel that
+        // @constCast() an comptime string like this one is the cause of the Bus error.
+        // I don't know how to test it without this hack. Works properly when tried in real.
+        try genHelp(CompileCmd, &wa.writer, "rover");
+
+        try clargTest(
+            @src().fn_name,
+            wa.writer.buffered(),
+            \\Usage:
+            \\  rover [options] [args]
+            \\
+            \\Options:
+            \\  --print-ir               prints IR
+            \\  -p, --dir-path <string> [default: "/home"]
+            \\  -h, --help
+            \\
+            ,
+        );
+    }
 }
 
 fn clargTest(comptime fn_name: []const u8, got: []const u8, expect: []const u8) Error!void {

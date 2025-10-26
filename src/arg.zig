@@ -8,19 +8,30 @@ pub fn Arg(arg: anytype) type {
         positional: bool = false,
         required: bool = false,
 
+        pub const Declared = if (@typeInfo(arg) == .@"struct") arg else @TypeOf(arg);
         pub const Value: type = ArgType(arg);
         pub const default: ?Value = makeDefault(Value, arg);
     };
 }
 
 fn ArgType(arg: anytype) type {
+    // If it's a type (no default value)
+    if (@TypeOf(arg) == type) {
+        if (arg == void) {
+            @compileError("Arg's type can't be void");
+        }
+
+        return switch (@typeInfo(arg)) {
+            // If it's a structure, it means it's a commands If so, we get parsing result as type
+            .@"struct" => ParsedArgs(arg),
+            else => arg,
+        };
+    }
+
     const T = @TypeOf(arg);
 
     if (T == @TypeOf(null)) {
         @compileError("Arg's default value can't be null");
-    }
-    if (T == void) {
-        @compileError("Arg's type can't be void");
     }
 
     return switch (@typeInfo(T)) {
@@ -42,7 +53,6 @@ fn ArgType(arg: anytype) type {
 
             break :b []const u8;
         },
-        .type => arg,
         .bool => @compileError("bool literal values aren't necessary, just use 'bool' type as argument"),
         else => @compileError("Unsupported arg type: " ++ @typeName(arg)),
     };
@@ -82,7 +92,7 @@ pub fn typeStr(field: StructField) []const u8 {
 
 pub fn is(field: StructField, kind: enum { positional, cmd }) bool {
     return switch (kind) {
-        .cmd => @typeInfo(field.type.Value) == .@"struct",
+        .cmd => return @typeInfo(field.type.Value) == .@"struct",
         .positional => {
             const def = field.defaultValue() orelse return false;
             return def.positional;
@@ -125,10 +135,19 @@ pub fn ParsedArgs(Args: type) type {
     var fields: [info.fields.len]StructField = undefined;
 
     inline for (info.fields, 0..) |f, i| {
-        const Value = f.type.Value;
-
         const T, const val = b: {
-            const def = f.type.default orelse break :b .{ ?Value, @as(?Value, null) };
+            if (@typeInfo(f.type) != .@"struct") break :b .{ f.type, f.default_value_ptr };
+
+            const Value = f.type.Value;
+
+            const def = f.type.default orelse {
+                if (is(f, .cmd)) {
+                    const T = ParsedArgs(f.type.Value);
+                    break :b .{ ?T, @as(?T, null) };
+                }
+
+                break :b .{ ?Value, @as(?Value, null) };
+            };
             break :b .{ Value, def };
         };
 
@@ -136,7 +155,12 @@ pub fn ParsedArgs(Args: type) type {
         fields[i] = .{
             .name = f.name,
             .type = T,
-            .default_value_ptr = if (T == []const u8) @ptrCast(@as(*const []const u8, &val)) else &val,
+            .default_value_ptr = if (@TypeOf(val) == ?*const anyopaque)
+                val
+            else if (T == []const u8)
+                @ptrCast(@as(*const []const u8, &val))
+            else
+                &val,
             .is_comptime = false,
             .alignment = @alignOf(T),
         };
