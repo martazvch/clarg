@@ -16,3 +16,4 @@ pub const printHelpToStream = clarg.printHelpToStream;
 // TODO: implement required
 // TODO: implement multiple use of same arg with different value
 // TODO: when printing help for a command, the usage is false because the name of exe is the program name nt the cmd
+// TODO: Verify if multiple args share the same short name
