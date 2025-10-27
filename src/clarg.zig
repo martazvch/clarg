@@ -246,61 +246,59 @@ fn getNameAndValueRanges(text: []u8) ParsedArgRes {
 // ------
 //  Help
 // ------
-pub fn printHelp(Args: type) !void {
-    var buf: [2048]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&buf);
-    const stdout = &stdout_writer.interface;
-    defer stdout.flush() catch unreachable;
-
-    try printHelpToStream(Args, stdout);
-}
-
-pub fn printHelpToStream(Args: type, stream: *std.Io.Writer) !void {
+pub fn help(Args: type, writer: *Writer) !void {
     // 2 for "--" and 2 for indentation
     const max_len = comptime arg.maxLen(Args) + 4;
     const info = @typeInfo(Args).@"struct";
 
-    try printUsage(info, stream);
-    try printDesc(Args, stream);
-    try printCmds(info, stream, max_len);
-    try printPositionals(info, stream, max_len);
-    try printOptions(info, stream, max_len);
+    try printUsage(info, writer);
+    try printDesc(Args, writer);
+    try printCmds(info, writer, max_len);
+    try printPositionals(info, writer, max_len);
+    try printOptions(info, writer, max_len);
 }
 
-fn printUsage(info: Type.Struct, stream: *Writer) !void {
-    try stream.writeAll("Usage:\n");
-    try stream.print("  {s} [options] [args]\n", .{prog});
+pub fn helpToFile(Args: type, file: std.fs.File) !void {
+    var buf: [2048]u8 = undefined;
+    var writer = file.writer(&buf);
+    try help(Args, &writer.interface);
+    return writer.interface.flush();
+}
+
+fn printUsage(info: Type.Struct, writer: *Writer) !void {
+    try writer.writeAll("Usage:\n");
+    try writer.print("  {s} [options] [args]\n", .{prog});
 
     // Check if there is at least one command
     var found = false;
     inline for (info.fields) |field| {
         if (!found and @typeInfo(field.type.Value) == .@"struct") {
             found = true;
-            try stream.print("  {s} [commands] [options] [args]\n", .{prog});
+            try writer.print("  {s} [commands] [options] [args]\n", .{prog});
         }
     }
-    try stream.writeAll("\n");
+    try writer.writeAll("\n");
 }
 
-fn printDesc(Args: type, stream: *Writer) !void {
+fn printDesc(Args: type, writer: *Writer) !void {
     if (!@hasDecl(Args, "description")) return;
 
-    try stream.writeAll("Description:\n");
+    try writer.writeAll("Description:\n");
     var it = std.mem.splitScalar(u8, Args.description, '\n');
 
     while (it.next()) |line| {
-        try stream.print("  {s}\n", .{line});
+        try writer.print("  {s}\n", .{line});
     }
-    try stream.writeAll("\n");
+    try writer.writeAll("\n");
 }
 
-fn printCmds(info: Type.Struct, stream: *Writer, comptime max_len: usize) !void {
+fn printCmds(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void {
     var found = false;
 
     inline for (info.fields) |field| {
         if (arg.is(field, .cmd)) {
             if (!found) {
-                try stream.writeAll("Commands:\n");
+                try writer.writeAll("Commands:\n");
             }
             found = true;
 
@@ -312,25 +310,25 @@ fn printCmds(info: Type.Struct, stream: *Writer, comptime max_len: usize) !void 
                 const desc_field = def_val.desc;
                 // Case: cmd: Arg(CmdArgs) = .{ .desc = "foo" }
                 if (desc_field.len > 0) {
-                    try stream.print(
+                    try writer.print(
                         "{[text]s:<[width]}  {[description]s}\n",
                         .{ .text = text, .description = def_val.desc, .width = max_len },
                     );
                 } else {
-                    try stream.print("{s}\n", .{text});
+                    try writer.print("{s}\n", .{text});
                 }
             }
             // Case: cmd: Arg(CmdArgs)
             else {
-                try stream.writeAll("  " ++ name ++ "\n");
+                try writer.writeAll("  " ++ name ++ "\n");
             }
         }
     }
 
-    if (found) try stream.writeAll("\n");
+    if (found) try writer.writeAll("\n");
 }
 
-fn printPositionals(info: Type.Struct, stream: *Writer, comptime max_len: usize) !void {
+fn printPositionals(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void {
     var found = false;
 
     inline for (info.fields) |field| {
@@ -341,7 +339,7 @@ fn printPositionals(info: Type.Struct, stream: *Writer, comptime max_len: usize)
         if (comptime arg.is(field, .positional)) {
             const def_val = field.defaultValue().?;
             if (!found) {
-                try stream.writeAll("Arguments:\n");
+                try writer.writeAll("Arguments:\n");
             }
             found = true;
 
@@ -350,25 +348,25 @@ fn printPositionals(info: Type.Struct, stream: *Writer, comptime max_len: usize)
             const desc_field = @field(def_val, "desc");
             // Case: arg: Arg(bool) = .{ .desc = "foo" }
             if (desc_field.len > 0) {
-                try stream.print(
+                try writer.print(
                     "{[text]s:<[width]}  {[description]s}",
                     .{ .text = text, .description = def_val.desc, .width = max_len },
                 );
             } else {
-                try stream.print("{s}", .{text});
+                try writer.print("{s}", .{text});
             }
 
-            try printDefault(field, stream);
-            try additionalData(stream, field, max_len);
-            try stream.writeAll("\n");
+            try printDefault(field, writer);
+            try additionalData(writer, field, max_len);
+            try writer.writeAll("\n");
         }
     }
 
-    if (found) try stream.writeAll("\n");
+    if (found) try writer.writeAll("\n");
 }
 
-fn printOptions(info: Type.Struct, stream: *Writer, comptime max_len: usize) !void {
-    try stream.writeAll("Options:\n");
+fn printOptions(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void {
+    try writer.writeAll("Options:\n");
 
     inline for (info.fields) |field| {
         comptime var text: []const u8 = "  ";
@@ -386,41 +384,41 @@ fn printOptions(info: Type.Struct, stream: *Writer, comptime max_len: usize) !vo
                 const desc_field = def_val.desc;
                 // Case: arg: Arg(bool) = .{ .desc = "foo" }
                 if (desc_field.len > 0) {
-                    try stream.print(
+                    try writer.print(
                         "{[text]s:<[width]}  {[description]s}",
                         .{ .text = text, .description = def_val.desc, .width = max_len },
                     );
                 } else {
-                    try stream.print("{s}", .{text});
+                    try writer.print("{s}", .{text});
                 }
             }
             // Case: arg: Arg(bool)
             else {
-                try stream.writeAll("  " ++ comptime fromSnake(field.name) ++ " " ++ arg.typeStr(field));
+                try writer.writeAll("  " ++ comptime fromSnake(field.name) ++ " " ++ arg.typeStr(field));
             }
 
-            try printDefault(field, stream);
-            try additionalData(stream, field, max_len);
+            try printDefault(field, writer);
+            try additionalData(writer, field, max_len);
 
-            try stream.writeAll("\n");
+            try writer.writeAll("\n");
         }
     }
 }
 
 /// Prints argument default value if one
-fn printDefault(field: Type.StructField, stream: *Writer) !void {
+fn printDefault(field: Type.StructField, writer: *Writer) !void {
     if (field.type.default) |default| {
         const Def = @TypeOf(default);
         const info = @typeInfo(Def);
 
         if (info == .@"enum") {
-            try stream.print(" [default: {t}]", .{default});
+            try writer.print(" [default: {t}]", .{default});
         } else if (Def == []const u8) {
-            try stream.print(" [default: \"{s}\"]", .{default});
+            try writer.print(" [default: \"{s}\"]", .{default});
         }
         // We don't print [default: false] for bools
         else if (Def != bool) {
-            try stream.print(" [default: {any}]", .{default});
+            try writer.print(" [default: {any}]", .{default});
         }
     }
 }

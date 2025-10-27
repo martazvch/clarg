@@ -54,12 +54,12 @@ pub fn main() !void {
     };
 
     if (parsed.help) {
-        try clarg.printHelp(Args);
+        try clarg.helpToFile(Args, .stderr());
     }
 
     if (parsed.cmd) |cmd| {
         if (cmd.help) {
-            try clarg.printHelp(CompileCmd);
+            try clarg.helpToFile(CompileCmd, .stderr());
         }
     }
 }

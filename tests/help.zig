@@ -17,7 +17,7 @@ fn genHelp(Args: type, writer: *std.Io.Writer, prog_name: []const u8) !void {
     defer iter.deinit(allocator);
     var diag: Diag = .empty;
     _ = clarg.parse(prog_name, Args, &iter, &diag, .{ .skip_first = false }) catch {};
-    try clarg.printHelpToStream(Args, writer);
+    try clarg.help(Args, writer);
 }
 
 test "type only" {

@@ -8,8 +8,8 @@ pub const SliceIter = utils.SliceIterator;
 const clarg = @import("clarg.zig");
 pub const Config = clarg.Config;
 pub const parse = clarg.parse;
-pub const printHelp = clarg.printHelp;
-pub const printHelpToStream = clarg.printHelpToStream;
+pub const help = clarg.help;
+pub const helpToFile = clarg.helpToFile;
 
 // TODO: check useless use of 'positional', 'required', ... when using a command
 // TODO: check if all required arguments have been provided
