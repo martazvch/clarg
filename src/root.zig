@@ -1,5 +1,6 @@
 const arg = @import("arg.zig");
 pub const Arg = arg.Arg;
+pub const ParsedArgs = arg.ParsedArgs;
 pub const Diag = @import("Diag.zig");
 
 const utils = @import("utils.zig");
