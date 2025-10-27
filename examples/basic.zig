@@ -57,7 +57,7 @@ pub fn main() !void {
         try clarg.printHelp(Args);
     }
 
-    if (parsed.cmd_compile) |cmd| {
+    if (parsed.cmd) |cmd| {
         if (cmd.help) {
             try clarg.printHelp(CompileCmd);
         }

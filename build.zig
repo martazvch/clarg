@@ -8,7 +8,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // We will also create a module for our other entry point, 'main.zig'.
-    const clarg_mod = b.createModule(.{
+    const clarg_mod = b.addModule("clarg", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
