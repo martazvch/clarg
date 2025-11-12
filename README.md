@@ -19,9 +19,9 @@ Then add the following to your `build.zig` file:
 
 ```sh
 const clarg = b.dependency("clarg", .{
-        .target = target,
-        .optimize = optimize,
-    });
+    .target = target,
+    .optimize = optimize,
+});
 exe.root_module.addImport("clarg", clarg.module("clarg"));
 ```
 
@@ -180,8 +180,8 @@ Options:
 
 ## TODO
 
-- Check useless use of 'positional', 'required', ... when using a command
-- Implement multiple use of same argument
-- When printing help for a command, the name could indicate command name
-- Verify if multiple args share the same short name
+[ ] Check useless use of 'positional', 'required', ... when using a command
+[ ] Implement multiple use of same argument
+[ ] When printing help for a command, the name could indicate command name
+[ ] Verify if multiple args share the same short name
 

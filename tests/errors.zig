@@ -43,5 +43,5 @@ test "missing required" {
         arg1: Arg(bool) = .{ .required = false },
         arg2: Arg(6) = .{ .required = true },
     };
-    try clargTest(Args, "--arg1", "Missing required argument 'arg2'");
+    try clargTest(Args, "--arg1", "Missing required argument '--arg2'");
 }
