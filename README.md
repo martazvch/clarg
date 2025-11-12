@@ -17,7 +17,7 @@ zig fetch --save https://github.com/martazvch/clarg/archive/refs/tags/<REPLACE M
 
 Then add the following to your `build.zig` file:
 
-```sh
+```zig
 const clarg = b.dependency("clarg", .{
     .target = target,
     .optimize = optimize,
@@ -181,6 +181,7 @@ Options:
 ## TODO
 
 [ ] Check useless use of 'positional', 'required', ... when using a command
+[ ] Write `required` in help when the argument is
 [ ] Implement multiple use of same argument
 [ ] When printing help for a command, the name could indicate command name
 [ ] Verify if multiple args share the same short name
