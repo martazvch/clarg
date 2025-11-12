@@ -124,14 +124,10 @@ pub fn maxLen(Args: type) usize {
 }
 
 /// Creates a structure with only the fields names and values. Final result of parsing arguments
-/// Adds a 'help' field
-pub fn ParsedArgs(Args: type) type {
-    if (@typeInfo(Args) != .@"struct") {
-        @compileError("ParsedArgs can only be used on structures");
-    }
+pub fn ParsedArgs(Args1: type) type {
+    const Args = ArgsWithHelp(Args1);
 
     const info = @typeInfo(Args).@"struct";
-
     var fields: [info.fields.len]StructField = undefined;
 
     inline for (info.fields, 0..) |f, i| {
@@ -165,6 +161,44 @@ pub fn ParsedArgs(Args: type) type {
             .alignment = @alignOf(T),
         };
     }
+
+    return @Type(.{ .@"struct" = .{
+        .fields = &fields,
+        .decls = &.{},
+        .is_tuple = false,
+        .layout = .auto,
+    } });
+}
+
+/// Adds a 'help' field if not user-defined
+pub fn ArgsWithHelp(Args: type) type {
+    if (@typeInfo(Args) != .@"struct") {
+        @compileError("ParsedArgs can only be used on structures");
+    }
+    const info = @typeInfo(Args).@"struct";
+
+    inline for (info.fields) |f| {
+        if (std.mem.eql(u8, f.name, "help")) {
+            return Args;
+        }
+    }
+
+    var fields: [info.fields.len + 1]StructField = undefined;
+
+    inline for (info.fields, 0..) |f, i| {
+        fields[i] = f;
+    }
+
+    fields[fields.len - 1] = .{
+        .name = "help",
+        .type = Arg(bool),
+        .default_value_ptr = &Arg(bool){
+            .desc = "Prints this help and exit",
+            .short = 'h',
+        },
+        .is_comptime = false,
+        .alignment = @alignOf(Arg(bool)),
+    };
 
     return @Type(.{ .@"struct" = .{
         .fields = &fields,

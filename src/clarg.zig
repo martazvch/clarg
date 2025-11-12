@@ -2,8 +2,10 @@ const std = @import("std");
 const Type = std.builtin.Type;
 const Writer = std.Io.Writer;
 
+const Proto = @import("proto.zig").Proto;
+const ProtoErr = @import("proto.zig").Error;
+// const StructProto = proto.StructProto;
 const utils = @import("utils.zig");
-const StructProto = utils.StructProto;
 const Span = utils.Span;
 const fromSnake = utils.fromSnake;
 const fromSnakeNoDash = utils.fromSnakeNoDash;
@@ -19,7 +21,7 @@ const Error = error{
     HelpBeforeParse,
 };
 
-const AllErrors = std.Io.Writer.Error || Error;
+pub const AllErrors = std.Io.Writer.Error || Error || ProtoErr;
 
 var prog: []const u8 = "";
 
@@ -61,83 +63,91 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
     if (@typeInfo(Args) != .@"struct") {
         @compileError("Arguments type must be a structure");
     }
+    const ParsedArgs = arg.ParsedArgs(Args);
 
     var options_started = false;
     var parsed_positional: usize = 0;
-    var res = arg.ParsedArgs(Args){};
-    var proto: StructProto(Args) = .{};
-    const infos = @typeInfo(Args).@"struct";
+    var res = ParsedArgs{};
+    var proto: Proto(arg.ArgsWithHelp(Args)) = .{};
+    const infos = @typeInfo(arg.ArgsWithHelp(Args)).@"struct";
 
-    a: while (args_iter.next()) |argument| {
-        // constCast allow to modify the text inplace to avoid allocation to convert from kebab-cli-syntax
-        // to snake_case structure fields syntaxe
-        const arg_parsed = getNameAndValueRanges(@constCast(argument));
-        const name = arg_parsed.name.getText(argument);
+    cmd: {
+        arg: while (args_iter.next()) |argument| {
+            // constCast allow to modify the text inplace to avoid allocation to convert from kebab-cli-syntax
+            // to snake_case structure fields syntaxe
+            const arg_parsed = getNameAndValueRanges(@constCast(argument));
+            const name = arg_parsed.name.getText(argument);
 
-        if (!options_started and arg_parsed.is_cmd) {
+            if (!options_started and arg_parsed.is_cmd) {
+                inline for (infos.fields) |field| {
+                    if (comptime arg.is(field, .cmd)) {
+                        if (std.mem.eql(u8, field.name, name)) {
+                            @field(res, field.name) = try parseCmd(field.type.Declared, args_iter, diag);
+                            break :cmd;
+                        }
+                    }
+                }
+            }
+
+            options_started = true;
+
             inline for (infos.fields) |field| {
-                if (comptime arg.is(field, .cmd)) {
-                    if (std.mem.eql(u8, field.name, name)) {
-                        @field(res, field.name) = try parseCmd(field.type.Declared, args_iter, diag);
-                        break :a;
-                    }
-                }
-            }
-        }
-
-        options_started = true;
-
-        inline for (infos.fields) |field| {
-            if (matchField(field, arg_parsed.name.getTextEx(argument))) {
-                if (@field(proto, field.name)) {
-                    try diag.print("Already parsed argument '{s}' (or its long/short version)", .{name});
-                    return error.AlreadyParsed;
-                } else {
-                    if (arg_parsed.value) |range| {
-                        @field(res, field.name) = argValue(field.type.Value, range.getText(argument)) catch {
+                if (matchField(field, arg_parsed.name.getTextEx(argument))) {
+                    if (@field(proto.fields, field.name).done) {
+                        try diag.print("Already parsed argument '{s}' (or its long/short version)", .{name});
+                        return error.AlreadyParsed;
+                    } else {
+                        if (arg_parsed.value) |range| {
+                            @field(res, field.name) = argValue(field.type.Value, range.getText(argument)) catch {
+                                try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), name });
+                                return error.WrongValueType;
+                            };
+                        }
+                        // If it's a boolean flag, no value needed
+                        else if (field.type.Value == bool) {
+                            @field(res, field.name) = true;
+                        }
+                        // If the value was needed
+                        else if (arg.needsValue(field)) {
                             try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), name });
-                            return error.WrongValueType;
-                        };
-                    }
-                    // If it's a boolean flag, no value needed
-                    else if (field.type.Value == bool) {
-                        @field(res, field.name) = true;
-                    }
-                    // If the value was needed
-                    else if (arg.needsValue(field)) {
-                        try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), name });
-                        return error.ExpectValue;
-                    }
+                            return error.ExpectValue;
+                        }
 
-                    @field(proto, field.name) = true;
-                    continue :a;
+                        @field(proto.fields, field.name).done = true;
+                        continue :arg;
+                    }
                 }
             }
-        }
 
-        // Positional
-        var count: usize = 0;
+            // Positional
+            var count: usize = 0;
 
-        inline for (infos.fields) |field| {
-            if (field.defaultValue()) |def| {
-                if (def.positional) {
-                    if (count == parsed_positional) {
-                        @field(res, field.name) = argValue(@field(field.type, "Value"), argument) catch {
-                            try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), name });
-                            return error.WrongValueType;
-                        };
+            inline for (infos.fields) |field| {
+                if (field.defaultValue()) |def| {
+                    if (def.positional) {
+                        if (count == parsed_positional) {
+                            @field(res, field.name) = argValue(@field(field.type, "Value"), argument) catch {
+                                try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), name });
+                                return error.WrongValueType;
+                            };
 
-                        parsed_positional += 1;
-                        continue :a;
+                            parsed_positional += 1;
+                            continue :arg;
+                        }
+
+                        count += 1;
                     }
-
-                    count += 1;
                 }
             }
+
+            try diag.print("Unknown argument '{s}'", .{name});
+            return error.UnknownArg;
         }
 
-        try diag.print("Unknown argument '{s}'", .{name});
-        return error.UnknownArg;
+        // We check only if help wasn't asked
+        if (!@field(proto.fields, "help").done) {
+            try proto.validate(diag);
+        }
     }
 
     return res;
@@ -202,7 +212,6 @@ const ParsedArgRes = struct {
 fn getNameAndValueRanges(text: []u8) ParsedArgRes {
     const State = enum { start, name, value };
 
-    var quote = false;
     var dashes: usize = 0;
     var current: usize = 0;
     var name: Span = .{ .end = text.len };
@@ -225,19 +234,13 @@ fn getNameAndValueRanges(text: []u8) ParsedArgRes {
                 name.end = current;
                 current += 1;
 
-                // Ignore quotes in string case
-                if (text[current] == '"') {
-                    quote = true;
-                    current += 1;
-                }
-
                 continue :s .value;
             }
 
             current += 1;
             continue :s .name;
         },
-        .value => value = .{ .start = current, .end = if (quote) text.len - 1 else text.len },
+        .value => value = .{ .start = current, .end = text.len },
     }
 
     return .{ .name = name, .value = value, .is_short = dashes == 1, .is_cmd = text[0] != '-' };
@@ -247,9 +250,11 @@ fn getNameAndValueRanges(text: []u8) ParsedArgRes {
 //  Help
 // ------
 pub fn help(Args: type, writer: *Writer) !void {
+    const ArgsWithHelp = arg.ArgsWithHelp(Args);
+
     // 2 for "--" and 2 for indentation
-    const max_len = comptime arg.maxLen(Args) + 4;
-    const info = @typeInfo(Args).@"struct";
+    const max_len = comptime arg.maxLen(ArgsWithHelp) + 4;
+    const info = @typeInfo(ArgsWithHelp).@"struct";
 
     try printUsage(info, writer);
     try printDesc(Args, writer);

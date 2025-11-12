@@ -15,9 +15,12 @@ fn clargTest(Args: type, cli_args: []const u8, err_msg: []const u8) !void {
     var iter = try SliceIter.fromString(allocator, cli_args);
     defer iter.deinit(allocator);
     var diag: Diag = .empty;
-    _ = clarg.parse("", Args, &iter, &diag, .{ .skip_first = false }) catch {
+
+    if (clarg.parse("", Args, &iter, &diag, .{ .skip_first = false })) |_| {
+        return error.TestExpectedError;
+    } else |_| {
         try expect(eql(u8, err_msg, diag.report()));
-    };
+    }
 }
 
 test "value args" {
@@ -32,5 +35,13 @@ test "value args" {
     try clargTest(Args, "--arg6", "Unknown argument 'arg6'");
     try clargTest(Args, "--arg2=6 --arg2=65", "Already parsed argument 'arg2' (or its long/short version)");
     try clargTest(Args, "--arg2=5 -i=9", "Already parsed argument 'i' (or its long/short version)");
-    try clargTest(Args, "--arg4=true", "Expect a value of type 'string' for argument 'arg4'");
+    try clargTest(Args, "--arg3=true", "Expect a value of type '<float>' for argument 'arg3'");
+}
+
+test "missing required" {
+    const Args = struct {
+        arg1: Arg(bool) = .{ .required = false },
+        arg2: Arg(6) = .{ .required = true },
+    };
+    try clargTest(Args, "--arg1", "Missing required argument 'arg2'");
 }
