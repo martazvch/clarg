@@ -20,7 +20,7 @@ fn genHelp(Args: type, writer: *std.Io.Writer, prog_name: []const u8) !void {
     try clarg.help(Args, writer);
 }
 
-test "type only" {
+test "auto-gen with type only" {
     const Args = struct {
         arg1: Arg(bool) = .{ .desc = "First argument" },
         arg2: Arg(i64) = .{},
@@ -49,12 +49,13 @@ test "type only" {
         \\                          small
         \\                          medium
         \\                          large
+        \\  -h, --help          Prints this help and exit
         \\
         ,
     );
 }
 
-test "default value" {
+test "auto-gen with default value" {
     const Args = struct {
         arg1: Arg(123) = .{ .desc = "Still the first argument" },
         arg2: Arg(45.8) = .{ .desc = "Gimme a float", .short = 'f' },
@@ -81,12 +82,13 @@ test "default value" {
         \\                          small
         \\                          medium
         \\                          large
+        \\  -h, --help          Prints this help and exit
         \\
         ,
     );
 }
 
-test "clarg enum literal" {
+test "override with clarg enum literal" {
     const Args = struct {
         arg1: Arg(.string) = .{ .desc = "Can use this enum literal" },
     };
@@ -103,12 +105,13 @@ test "clarg enum literal" {
         \\
         \\Options:
         \\  --arg1 <string>  Can use this enum literal
+        \\  -h, --help       Prints this help and exit
         \\
         ,
     );
 }
 
-test "all categories" {
+test "auto-gen with description" {
     const Args = struct {
         arg1: Arg(.string) = .{ .desc = "Can use this enum literal" },
         arg2: Arg("/home") = .{ .desc = "path", .positional = true },
@@ -140,12 +143,13 @@ test "all categories" {
         \\Options:
         \\  --arg1 <string>       Can use this enum literal
         \\  -i, --it-count <int>  iteration count [default: 5]
+        \\  -h, --help            Prints this help and exit
         \\
         ,
     );
 }
 
-test "commands" {
+test "with sub-commands" {
     const Op = enum { add, sub, mul, div };
     const OpCmdArgs = struct {
         it_count: Arg(5) = .{ .desc = "iteration count", .short = 'i' },
@@ -156,7 +160,6 @@ test "commands" {
     const CompileCmd = struct {
         print_ir: Arg(bool) = .{ .desc = "prints IR" },
         dir_path: Arg("/home") = .{ .short = 'p' },
-        help: Arg(bool) = .{ .short = 'h' },
     };
 
     const Args = struct {
@@ -223,9 +226,6 @@ test "commands" {
     {
         var wa = std.Io.Writer.Allocating.init(allocator);
         defer wa.deinit();
-        // We pass the arg as cmd_compile because clarg is gonna try to modify it but I feel that
-        // @constCast() an comptime string like this one is the cause of the Bus error.
-        // I don't know how to test it without this hack. Works properly when tried in real.
         try genHelp(CompileCmd, &wa.writer, "rover");
 
         try clargTest(
@@ -237,7 +237,7 @@ test "commands" {
             \\Options:
             \\  --print-ir               prints IR
             \\  -p, --dir-path <string> [default: "/home"]
-            \\  -h, --help
+            \\  -h, --help               Prints this help and exit
             \\
             ,
         );

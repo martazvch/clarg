@@ -3,22 +3,6 @@ const clarg = @import("clarg");
 const Arg = clarg.Arg;
 const Cmd = clarg.Cmd;
 
-const Size = enum { small, medium, large };
-
-// const Args = struct {
-//     print_ast: Arg(bool) = .{ .desc = "prints AST" },
-//     file_path: Arg(.string) = .{ .desc = "file path", .short = 'f' },
-//     dir_path: Arg("/home") = .{ .desc = "file path", .short = 'f' },
-//     count: Arg(5) = .{ .desc = "iteration count", .short = 'c' },
-//     size: Arg(Size) = .{ .desc = "size of binary" },
-//     other_size: Arg(Size.small) = .{ .desc = "size of binary" },
-//     very_long_name_to_print_to_see_what_happens: Arg(bool) = .{ .desc = "very long arg name" },
-//
-//     pub const description =
-//         \\Description of the program
-//         \\it can be anything
-//     ;
-// };
 const Op = enum { add, sub, mul, div };
 const OpCmdArgs = struct {
     it_count: Arg(5) = .{ .desc = "iteration count", .short = 'i' },
@@ -26,18 +10,67 @@ const OpCmdArgs = struct {
     help: Arg(bool) = .{ .short = 'h' },
 };
 
-const CompileCmd = struct {
-    print_ir: Arg(bool) = .{ .desc = "prints IR" },
-    dir_path: Arg("/home"),
-    help: Arg(bool) = .{ .short = 'h' },
-};
-
+const Size = enum { small, medium, large };
 const Args = struct {
-    arg_arg: Arg(5),
-    size: Arg(Size.large) = .{ .desc = "matter of taste", .short = 's' },
-    cmd: Arg(OpCmdArgs) = .{ .desc = "operates on data" },
-    cmd_compile: Arg(CompileCmd),
-    help: Arg(bool) = .{ .short = 'h' },
+    // ---------------
+    // Default values
+    //   You can provide a default value for each argument or leave it uninit
+    // No default value
+    print_ast: Arg(bool),
+    // Using default value:
+    //   .desc = ""
+    //   .short = null,
+    //   .positional = false
+    //   .required = false
+    print_code: Arg(bool) = .{},
+    // Using default with custom values
+    print_ir: Arg(bool) = .{ .desc = "Print IR", .short = 'p', .required = true, .positional = false },
+
+    // ------
+    // Types
+    //   You can specify the following types for arguments
+    //   As no default value are specified, the resulting type when parsed will
+    //   be ?T where T is the type inside `Arg(T)`
+    t0: Arg(bool),
+    t1: Arg(i64),
+    t2: Arg(f64),
+    t3: Arg([]const u8),
+    // For strings there is also the enum literal .string that is supported
+    t4: Arg(.string),
+    // Enums
+    t5: Arg(Size),
+
+    // --------------
+    // Default value
+    //   You can use a value instead of a type to provide a fallback value
+    //   Argument's type will be infered and the resulting type when parsed will
+    //   be T where T is the type inside `Arg(T)`
+    // Interger
+    count: Arg(5) = .{ .desc = "iteration count", .short = 'c' },
+    // Float
+    delta: Arg(10.5) = .{ .desc = "delta time between calculations", .short = 'd', .required = true },
+    // String
+    dir_path: Arg("/home") = .{ .desc = "file path", .short = 'f' },
+    // Enum
+    other_size: Arg(Size.small) = .{ .desc = "size of binary" },
+
+    // ------------
+    // Positionals
+    //   Positional arguments are defined using the `.positional` field and are parsed
+    //   in the order of declaration. They can be define before and after other arguments
+    file: Arg(.string) = .{ .positional = true },
+    outdir: Arg("/tmp") = .{ .positional = true },
+
+    // -------------
+    // Sub-commands
+    //   They are simply defined by giving a structure as argument's type
+    cmd: Arg(OpCmdArgs) = .{ .desc = "operates on input" },
+
+    // Description will be displayed
+    pub const description =
+        \\Description of the program
+        \\it can be anything
+    ;
 };
 
 pub fn main() !void {
@@ -55,11 +88,28 @@ pub fn main() !void {
 
     if (parsed.help) {
         try clarg.helpToFile(Args, .stderr());
+        return;
     }
 
+    // No default value are optionals except bool that are false
+    if (parsed.print_ast) {
+        std.log.debug("Prints the AST", .{});
+    }
+    if (parsed.t4) |val| {
+        std.log.debug("T4 value: {s}", .{val});
+    }
+
+    // Required arguments aren't optional
+    std.log.debug("Delta: {}", .{parsed.delta});
+
+    // Default values are usable as is
+    std.log.debug("count: {d}", .{parsed.count});
+    std.log.debug("outdir: {s}", .{parsed.outdir});
+
+    // Sub command usage
     if (parsed.cmd) |cmd| {
         if (cmd.help) {
-            try clarg.helpToFile(CompileCmd, .stderr());
+            try clarg.helpToFile(OpCmdArgs, .stderr());
         }
     }
 }
