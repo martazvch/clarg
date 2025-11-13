@@ -142,6 +142,7 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
                             };
 
                             parsed_positional += 1;
+                            @field(proto.fields, field.name).done = true;
                             continue :arg;
                         }
 

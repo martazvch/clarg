@@ -146,10 +146,11 @@ test "positional" {
         arg3: Arg(65.12) = .{ .positional = true },
         arg4: Arg("/home") = .{ .short = 'g' },
         arg5: Arg(Size.large) = .{ .short = 'a', .positional = true },
+        arg6: Arg(i64) = .{ .positional = true, .required = true },
     };
 
     {
-        var iter = try SliceIter.fromString(allocator, "998.123 -arg2=34 --arg1 medium -g=alright");
+        var iter = try SliceIter.fromString(allocator, "998.123 -arg2=34 --arg1 medium -g=alright 98");
         defer iter.deinit(allocator);
         var diag: Diag = .empty;
         const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
@@ -159,6 +160,7 @@ test "positional" {
         try expect(parsed.arg3 == 998.123);
         try expect(std.mem.eql(u8, parsed.arg4, "alright"));
         try expect(parsed.arg5 == .medium);
+        try expect(parsed.arg6 == 98);
     }
 }
 
