@@ -426,6 +426,7 @@ fn printOptions(info: Type.Struct, writer: *Writer, comptime max_len: usize) !vo
             }
 
             try printDefault(field, writer);
+            try printRequired(field, writer);
             try additionalData(writer, field, max_len);
 
             try writer.writeAll("\n");
@@ -447,6 +448,15 @@ fn printDefault(field: Type.StructField, writer: *Writer) !void {
         // We don't print [default: false] for bools
         else if (Def != bool) {
             try writer.print(" [default: {any}]", .{default});
+        }
+    }
+}
+
+/// Prints argument default value if one
+fn printRequired(field: Type.StructField, writer: *Writer) !void {
+    if (field.defaultValue()) |def| {
+        if (def.required) {
+            try writer.writeAll(" [required]");
         }
     }
 }

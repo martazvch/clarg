@@ -244,6 +244,44 @@ test "with sub-commands" {
     }
 }
 
+test "required args" {
+    const Args = struct {
+        arg1: Arg(.string) = .{ .desc = "Can use this enum literal", .required = true },
+        arg2: Arg("/home") = .{ .desc = "path", .positional = true, .required = true },
+        it_count: Arg(5) = .{ .desc = "iteration count", .short = 'i', .required = true },
+
+        pub const description =
+            \\This is a little program to parse useless data
+            \\and then tries to render them in a nice way
+        ;
+    };
+
+    var wa = std.Io.Writer.Allocating.init(allocator);
+    defer wa.deinit();
+    try genHelp(Args, &wa.writer, "data-visu");
+
+    try clargTest(
+        @src().fn_name,
+        wa.writer.buffered(),
+        \\Usage:
+        \\  data-visu [options] [args]
+        \\
+        \\Description:
+        \\  This is a little program to parse useless data
+        \\  and then tries to render them in a nice way
+        \\
+        \\Arguments:
+        \\  <string>              path [default: "/home"]
+        \\
+        \\Options:
+        \\  --arg1 <string>       Can use this enum literal [required]
+        \\  -i, --it-count <int>  iteration count [default: 5] [required]
+        \\  -h, --help            Prints this help and exit
+        \\
+        ,
+    );
+}
+
 fn clargTest(comptime fn_name: []const u8, got: []const u8, expect: []const u8) Error!void {
     if (!std.mem.eql(u8, expect, got)) return printErr(fn_name, got, expect);
 }
