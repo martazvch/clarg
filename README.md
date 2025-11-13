@@ -139,7 +139,7 @@ Arguments:
 Options:
   --print-ast
   --print-code
-  -p, --print-ir           Print IR
+  -p, --print-ir           Print IR [required]
   --t0
   --t1 <int>
   --t2 <float>
