@@ -180,9 +180,8 @@ Options:
 
 ## TODO
 
-[ ] Check useless use of 'positional', 'required', ... when using a command
-[ ] Write `required` in help when the argument is
-[ ] Implement multiple use of same argument
-[ ] When printing help for a command, the name could indicate command name
-[ ] Verify if multiple args share the same short name
+- [ ] Implement multiple use of same argument
+- [ ] When printing help for a command, the name could indicate command name
+- [ ] Verify if multiple args share the same short name
+- [ ] Support '--' to start a list of unprocessed arguments passed to the user
 
