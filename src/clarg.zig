@@ -4,11 +4,10 @@ const Writer = std.Io.Writer;
 
 const Proto = @import("proto.zig").Proto;
 const ProtoErr = @import("proto.zig").Error;
-// const StructProto = proto.StructProto;
 const utils = @import("utils.zig");
 const Span = utils.Span;
-const fromSnake = utils.fromSnake;
-const fromSnakeNoDash = utils.fromSnakeNoDash;
+const kebabFromSnakeDash = utils.kebabFromSnakeDash;
+const kebabFromSnake = utils.kebabFromSnake;
 
 const arg = @import("arg.zig");
 const Diag = @import("Diag.zig");
@@ -18,7 +17,7 @@ const Error = error{
     ExpectValue,
     WrongValueType,
     UnknownArg,
-    HelpBeforeParse,
+    NamedPositional,
 };
 
 pub const AllErrors = std.Io.Writer.Error || Error || ProtoErr;
@@ -77,6 +76,7 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
             // to snake_case structure fields syntaxe
             const arg_parsed = getNameAndValueRanges(@constCast(argument));
             const name = arg_parsed.name.getText(argument);
+            const full_name = arg_parsed.full_name.getText(argument);
 
             if (!options_started and arg_parsed.is_cmd) {
                 inline for (infos.fields) |field| {
@@ -94,12 +94,18 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
             inline for (infos.fields) |field| {
                 if (matchField(field, arg_parsed.name.getTextEx(argument))) {
                     if (@field(proto.fields, field.name).done) {
-                        try diag.print("Already parsed argument '{s}' (or its long/short version)", .{name});
+                        try diag.print("Already parsed argument '{s}' (or its long/short version)", .{full_name});
                         return error.AlreadyParsed;
                     } else {
+                        // Check if it's a positional, can't use them by their name
+                        if (field.defaultValue()) |def| if (def.positional) {
+                            try diag.print("Can't use '{s}' by it's name as it's a positional argument", .{full_name});
+                            return error.NamedPositional;
+                        };
+
                         if (arg_parsed.value) |range| {
                             @field(res, field.name) = argValue(field.type.Value, range.getText(argument)) catch {
-                                try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), name });
+                                try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), full_name });
                                 return error.WrongValueType;
                             };
                         }
@@ -109,7 +115,7 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
                         }
                         // If the value was needed
                         else if (arg.needsValue(field)) {
-                            try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), name });
+                            try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), full_name });
                             return error.ExpectValue;
                         }
 
@@ -127,7 +133,7 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
                     if (def.positional) {
                         if (count == parsed_positional) {
                             @field(res, field.name) = argValue(@field(field.type, "Value"), argument) catch {
-                                try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), name });
+                                try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), full_name });
                                 return error.WrongValueType;
                             };
 
@@ -140,7 +146,7 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
                 }
             }
 
-            try diag.print("Unknown argument '{s}'", .{name});
+            try diag.print("Unknown argument '{s}'", .{full_name});
             return error.UnknownArg;
         }
 
@@ -203,6 +209,7 @@ fn argValue(T: type, value: []const u8) error{TypeMismatch}!T {
 
 const ParsedArgRes = struct {
     name: Span,
+    full_name: Span,
     value: ?Span,
     is_short: bool,
     is_cmd: bool,
@@ -243,7 +250,13 @@ fn getNameAndValueRanges(text: []u8) ParsedArgRes {
         .value => value = .{ .start = current, .end = text.len },
     }
 
-    return .{ .name = name, .value = value, .is_short = dashes == 1, .is_cmd = text[0] != '-' };
+    return .{
+        .name = name,
+        .full_name = .{ .end = name.end },
+        .value = value,
+        .is_short = dashes == 1,
+        .is_cmd = text[0] != '-',
+    };
 }
 
 // ------
@@ -307,7 +320,7 @@ fn printCmds(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void 
             }
             found = true;
 
-            const name = comptime fromSnakeNoDash(field.name);
+            const name = comptime kebabFromSnake(field.name);
             const text = "  " ++ name;
 
             // Case: cmd: Arg(CmdArgs) = .{}
@@ -384,7 +397,7 @@ fn printOptions(info: Type.Struct, writer: *Writer, comptime max_len: usize) !vo
                 }
 
                 const type_text = comptime arg.typeStr(field);
-                comptime text = text ++ fromSnake(field.name) ++ if (type_text.len > 0) " " ++ type_text else "";
+                comptime text = text ++ kebabFromSnakeDash(field.name) ++ if (type_text.len > 0) " " ++ type_text else "";
 
                 const desc_field = def_val.desc;
                 // Case: arg: Arg(bool) = .{ .desc = "foo" }
@@ -399,7 +412,7 @@ fn printOptions(info: Type.Struct, writer: *Writer, comptime max_len: usize) !vo
             }
             // Case: arg: Arg(bool)
             else {
-                try writer.writeAll("  " ++ comptime fromSnake(field.name) ++ " " ++ arg.typeStr(field));
+                try writer.writeAll("  " ++ comptime kebabFromSnakeDash(field.name) ++ " " ++ arg.typeStr(field));
             }
 
             try printDefault(field, writer);

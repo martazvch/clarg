@@ -19,7 +19,10 @@ fn clargTest(Args: type, cli_args: []const u8, err_msg: []const u8) !void {
     if (clarg.parse("", Args, &iter, &diag, .{ .skip_first = false })) |_| {
         return error.TestExpectedError;
     } else |_| {
-        try expect(eql(u8, err_msg, diag.report()));
+        expect(eql(u8, err_msg, diag.report())) catch |err| {
+            std.debug.print("Expect:\n\t{s}\nGot:\n\t{s}\n\n", .{ err_msg, diag.report() });
+            return err;
+        };
     }
 }
 
@@ -32,10 +35,10 @@ test "value args" {
         arg5: Arg(Size.large),
     };
 
-    try clargTest(Args, "--arg6", "Unknown argument 'arg6'");
-    try clargTest(Args, "--arg2=6 --arg2=65", "Already parsed argument 'arg2' (or its long/short version)");
-    try clargTest(Args, "--arg2=5 -i=9", "Already parsed argument 'i' (or its long/short version)");
-    try clargTest(Args, "--arg3=true", "Expect a value of type '<float>' for argument 'arg3'");
+    try clargTest(Args, "--arg6", "Unknown argument '--arg6'");
+    try clargTest(Args, "--arg2=6 --arg2=65", "Already parsed argument '--arg2' (or its long/short version)");
+    try clargTest(Args, "--arg2=5 -i=9", "Already parsed argument '-i' (or its long/short version)");
+    try clargTest(Args, "--arg3=true", "Expect a value of type '<float>' for argument '--arg3'");
 }
 
 test "missing required" {
@@ -44,4 +47,12 @@ test "missing required" {
         arg2: Arg(6) = .{ .required = true },
     };
     try clargTest(Args, "--arg1", "Missing required argument '--arg2'");
+}
+
+test "named positional" {
+    const Args = struct {
+        arg1: Arg(i64) = .{ .positional = true, .required = true },
+    };
+
+    try clargTest(Args, "--arg1", "Can't use '--arg1' by it's name as it's a positional argument");
 }

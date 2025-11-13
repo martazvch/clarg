@@ -24,7 +24,7 @@ pub const Span = struct {
 };
 
 /// Convert snake case to kind of kebab case with '--' at the beginning
-pub fn fromSnake(comptime text: []const u8) []const u8 {
+pub fn kebabFromSnakeDash(comptime text: []const u8) []const u8 {
     comptime var name: []const u8 = "--";
 
     inline for (text) |c| {
@@ -34,8 +34,8 @@ pub fn fromSnake(comptime text: []const u8) []const u8 {
     return name;
 }
 
-/// Convert snake case to kind of kebab case with '--' at the beginning
-pub fn fromSnakeNoDash(comptime text: []const u8) []const u8 {
+/// Convert snake case to kebab case
+pub fn kebabFromSnake(comptime text: []const u8) []const u8 {
     comptime var name: []const u8 = "";
 
     inline for (text) |c| {

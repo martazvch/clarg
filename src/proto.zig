@@ -1,11 +1,12 @@
 const std = @import("std");
 const Diag = @import("Diag.zig");
+const kebabFromSnake = @import("utils.zig").kebabFromSnake;
+
+pub const Error = std.Io.Writer.Error || error{err};
 
 /// Given a structure, generates another one with the same fields
 /// with each one being `false`. Can be used as a prototype of the structure
 /// to keep track of which field have been initialiazed
-pub const Error = std.Io.Writer.Error || error{err};
-
 pub fn Proto(T: type) type {
     return struct {
         fields: ProtoFields(T) = .{},
@@ -17,12 +18,7 @@ pub fn Proto(T: type) type {
                 const field = @field(self.fields, f.name);
 
                 if (!field.done and field.required) {
-                    var kebab: [f.name.len]u8 = undefined;
-                    inline for (f.name, 0..) |c, i| {
-                        kebab[i] = if (c == '_') '-' else c;
-                    }
-
-                    try diag.print("Missing required argument '--{s}'", .{kebab});
+                    try diag.print("Missing required argument '--{s}'", .{kebabFromSnake(f.name)});
                     return error.err;
                 }
             }
