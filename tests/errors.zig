@@ -35,7 +35,7 @@ test "value args" {
         arg5: Arg(Size.large),
     };
 
-    try clargTest(Args, "--arg6", "Unknown argument '--arg6'");
+    try clargTest(Args, "--arg0", "Unknown argument '--arg0'");
     try clargTest(Args, "--arg2=6 --arg2=65", "Already parsed argument '--arg2' (or its long/short version)");
     try clargTest(Args, "--arg2=5 -i=9", "Already parsed argument '-i' (or its long/short version)");
     try clargTest(Args, "--arg3=true", "Expect a value of type '<float>' for argument '--arg3'");
@@ -55,4 +55,12 @@ test "named positional" {
     };
 
     try clargTest(Args, "--arg1", "Can't use '--arg1' by it's name as it's a positional argument");
+    try clargTest(Args, "65.2", "Expect a value of type '<int>' for positional argument '--arg1'");
+}
+
+test "invalid arg" {
+    const Args = struct {};
+
+    try clargTest(Args, "-", "Invalid argument '-'");
+    try clargTest(Args, "------", "Invalid argument '------'");
 }

@@ -18,6 +18,7 @@ const Error = error{
     WrongValueType,
     UnknownArg,
     NamedPositional,
+    InvalidArg,
 };
 
 pub const AllErrors = std.Io.Writer.Error || Error || ProtoErr;
@@ -74,7 +75,10 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
         arg: while (args_iter.next()) |argument| {
             // constCast allow to modify the text inplace to avoid allocation to convert from kebab-cli-syntax
             // to snake_case structure fields syntaxe
-            const arg_parsed = getNameAndValueRanges(@constCast(argument));
+            const arg_parsed = getNameAndValueRanges(@constCast(argument)) catch |err| {
+                try diag.print("Invalid argument '{s}'", .{argument});
+                return err;
+            };
             const name = arg_parsed.name.getText(argument);
             const full_name = arg_parsed.full_name.getText(argument);
 
@@ -133,7 +137,7 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
                     if (def.positional) {
                         if (count == parsed_positional) {
                             @field(res, field.name) = argValue(@field(field.type, "Value"), argument) catch {
-                                try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), full_name });
+                                try diag.print("Expect a value of type '{s}' for positional argument '--{s}'", .{ arg.typeStr(field), kebabFromSnake(field.name) });
                                 return error.WrongValueType;
                             };
 
@@ -216,7 +220,7 @@ const ParsedArgRes = struct {
 };
 
 /// Modifies inplace the text to avoid allocation
-fn getNameAndValueRanges(text: []u8) ParsedArgRes {
+fn getNameAndValueRanges(text: []u8) Error!ParsedArgRes {
     const State = enum { start, name, value };
 
     var dashes: usize = 0;
@@ -226,6 +230,11 @@ fn getNameAndValueRanges(text: []u8) ParsedArgRes {
 
     s: switch (State.start) {
         .start => {
+            // If we reached end of argument but still in start, it's an invalid arg
+            if (current == text.len) {
+                return error.InvalidArg;
+            }
+
             if (text[current] != '-') {
                 name.start = current;
                 continue :s .name;
