@@ -39,6 +39,7 @@ Clarg support all of the following:
 - Sub-commands and nested sub-commands
 - Error reporting
 - Automatic generation of `help` argument (can be overridden)
+- Multiple assignment operators: `=`, `:`, ` ` (use `Config` structure)
 
 ## Usage
 

@@ -12,11 +12,10 @@ const Error = std.Io.Writer.Error || error{TestExpectedEqual};
 
 pub const Size = enum { small, medium, large };
 
-fn genHelp(Args: type, writer: *std.Io.Writer, prog_name: []const u8) !void {
-    var iter = try SliceIter.fromString(allocator, "");
-    defer iter.deinit(allocator);
+fn genHelp(Args: type, writer: *std.Io.Writer, prog_name: [:0]const u8) !void {
+    const args = [_][:0]const u8{prog_name};
     var diag: Diag = .empty;
-    _ = clarg.parse(prog_name, Args, &iter, &diag, .{ .skip_first = false }) catch {};
+    _ = clarg.parse(Args, &args, &diag, .{}) catch {};
     try clarg.help(Args, writer);
 }
 

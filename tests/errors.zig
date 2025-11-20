@@ -11,12 +11,10 @@ const SliceIter = clarg.SliceIter;
 // Test common data
 const Size = enum { small, medium, large };
 
-fn clargTest(Args: type, cli_args: []const u8, err_msg: []const u8) !void {
-    var iter = try SliceIter.fromString(allocator, cli_args);
-    defer iter.deinit(allocator);
+fn clargTest(Args: type, args: []const [:0]const u8, err_msg: []const u8) !void {
     var diag: Diag = .empty;
 
-    if (clarg.parse("", Args, &iter, &diag, .{ .skip_first = false })) |_| {
+    if (clarg.parse(Args, args, &diag, .{})) |_| {
         return error.TestExpectedError;
     } else |_| {
         expect(eql(u8, err_msg, diag.report())) catch |err| {
@@ -35,10 +33,10 @@ test "value args" {
         arg5: Arg(Size.large),
     };
 
-    try clargTest(Args, "--arg0", "Unknown argument '--arg0'");
-    try clargTest(Args, "--arg2=6 --arg2=65", "Already parsed argument '--arg2' (or its long/short version)");
-    try clargTest(Args, "--arg2=5 -i=9", "Already parsed argument '-i' (or its long/short version)");
-    try clargTest(Args, "--arg3=true", "Expect a value of type '<float>' for argument '--arg3'");
+    try clargTest(Args, &.{ "ray", "--arg0" }, "Unknown argument '--arg0'");
+    try clargTest(Args, &.{ "ray", "--arg2=6", "--arg2=65" }, "Already parsed argument '--arg2' (or its long/short version)");
+    try clargTest(Args, &.{ "ray", "--arg2=5", "-i=9" }, "Already parsed argument '-i' (or its long/short version)");
+    try clargTest(Args, &.{ "ray", "--arg3=true" }, "Expect a value of type '<float>' for argument '--arg3'");
 }
 
 test "missing required" {
@@ -46,7 +44,7 @@ test "missing required" {
         arg1: Arg(bool) = .{ .required = false },
         arg2: Arg(6) = .{ .required = true },
     };
-    try clargTest(Args, "--arg1", "Missing required argument '--arg2'");
+    try clargTest(Args, &.{ "data-visu", "--arg1" }, "Missing required argument '--arg2'");
 }
 
 test "named positional" {
@@ -54,13 +52,13 @@ test "named positional" {
         arg1: Arg(i64) = .{ .positional = true, .required = true },
     };
 
-    try clargTest(Args, "--arg1", "Can't use '--arg1' by it's name as it's a positional argument");
-    try clargTest(Args, "65.2", "Expect a value of type '<int>' for positional argument '--arg1'");
+    try clargTest(Args, &.{ "arx", "--arg1" }, "Can't use '--arg1' by it's name as it's a positional argument");
+    try clargTest(Args, &.{ "arx", "65.2" }, "Expect a value of type '<int>' for positional argument '--arg1'");
 }
 
 test "invalid arg" {
     const Args = struct {};
 
-    try clargTest(Args, "-", "Invalid argument '-'");
-    try clargTest(Args, "------", "Invalid argument '------'");
+    try clargTest(Args, &.{ "objdump", "-" }, "Invalid argument '-'");
+    try clargTest(Args, &.{ "objdump", "------" }, "Invalid argument '------'");
 }

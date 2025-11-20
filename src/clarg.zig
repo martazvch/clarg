@@ -6,11 +6,15 @@ const Proto = @import("proto.zig").Proto;
 const ProtoErr = @import("proto.zig").Error;
 const utils = @import("utils.zig");
 const Span = utils.Span;
-const kebabFromSnakeDash = utils.kebabFromSnakeDash;
 const kebabFromSnake = utils.kebabFromSnake;
 
 const arg = @import("arg.zig");
 const Diag = @import("Diag.zig");
+
+args: []const [:0]const u8,
+current: usize,
+
+const Self = @This();
 
 const Error = error{
     AlreadyParsed,
@@ -23,43 +27,48 @@ const Error = error{
 
 pub const AllErrors = std.Io.Writer.Error || Error || ProtoErr;
 
-var prog: []const u8 = "";
-
-fn additionalData(writer: *Writer, field: Type.StructField, comptime padding: usize) !void {
-    const pad = " " ** (padding + 4);
-
-    switch (@typeInfo(@field(field.type, "Value"))) {
-        .@"enum" => |infos| {
-            try writer.print("\n{s}Supported values:\n", .{pad});
-
-            inline for (infos.fields, 0..) |f, i| {
-                try writer.print("{s}  {s}{s}", .{
-                    pad,
-                    f.name,
-                    if (i < infos.fields.len - 1) "\n" else "",
-                });
-            }
-        },
-        else => {},
-    }
-}
+pub var prog: []const u8 = "";
 
 /// Parsing configuration
 pub const Config = struct {
-    /// Skips first argument (program name)
-    skip_first: bool = true,
+    /// Assignment operator (token between name and value)
+    op: Op = .equal,
+
+    pub const Op = enum {
+        equal,
+        colon,
+        space,
+
+        pub fn eq(self: Op, char: u8) bool {
+            return switch (self) {
+                .equal => char == '=',
+                .colon => char == ':',
+                .space => char == ' ',
+            };
+        }
+    };
 };
 
-/// Parses arguments from the iterator. It must declare a function `next` returning either `?[]const u8` or `?[:0]const u8`
-pub fn parse(prog_name: []const u8, Args: type, args_iter: anytype, diag: *Diag, config: Config) AllErrors!arg.ParsedArgs(Args) {
-    validateIter(args_iter);
-    prog = prog_name;
-    if (config.skip_first) _ = args_iter.next();
-
-    return parseCmd(Args, args_iter, diag);
+pub fn parse(Args: type, args: []const [:0]const u8, diag: *Diag, config: Config) AllErrors!arg.ParsedArgs(Args) {
+    prog = args[0];
+    var parser: Self = .{ .args = args[1..], .current = 0 };
+    return parser.parseCmd(Args, diag, config);
 }
 
-fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArgs(Args) {
+fn at(self: *const Self) []const u8 {
+    return self.args[self.current];
+}
+
+fn prev(self: *const Self) []const u8 {
+    return self.args[self.current - 1];
+}
+
+fn advance(self: *Self) []u8 {
+    self.current += 1;
+    return @constCast(self.args[self.current - 1]);
+}
+
+fn parseCmd(self: *Self, Args: type, diag: *Diag, config: Config) AllErrors!arg.ParsedArgs(Args) {
     if (@typeInfo(Args) != .@"struct") {
         @compileError("Arguments type must be a structure");
     }
@@ -72,21 +81,19 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
     const infos = @typeInfo(arg.ArgsWithHelp(Args)).@"struct";
 
     cmd: {
-        arg: while (args_iter.next()) |argument| {
-            // constCast allow to modify the text inplace to avoid allocation to convert from kebab-cli-syntax
-            // to snake_case structure fields syntaxe
-            const arg_parsed = getNameAndValueRanges(@constCast(argument)) catch |err| {
-                try diag.print("Invalid argument '{s}'", .{argument});
+        arg: while (self.current < self.args.len) {
+            const arg_parsed = self.getNameAndValueRanges(config.op) catch |err| {
+                try diag.print("Invalid argument '{s}'", .{self.prev()});
                 return err;
             };
-            const name = arg_parsed.name.getText(argument);
-            const full_name = arg_parsed.full_name.getText(argument);
+            const name = arg_parsed.name;
+            const full_name = arg_parsed.full_name;
 
             if (!options_started and arg_parsed.is_cmd) {
                 inline for (infos.fields) |field| {
                     if (comptime arg.is(field, .cmd)) {
                         if (std.mem.eql(u8, field.name, name)) {
-                            @field(res, field.name) = try parseCmd(field.type.Declared, args_iter, diag);
+                            @field(res, field.name) = try self.parseCmd(field.type.Declared, diag, config);
                             break :cmd;
                         }
                     }
@@ -96,7 +103,7 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
             options_started = true;
 
             inline for (infos.fields) |field| {
-                if (matchField(field, arg_parsed.name.getTextEx(argument))) {
+                if (matchField(field, name, arg_parsed.is_short)) {
                     if (@field(proto.fields, field.name).done) {
                         try diag.print("Already parsed argument '{s}' (or its long/short version)", .{full_name});
                         return error.AlreadyParsed;
@@ -107,8 +114,8 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
                             return error.NamedPositional;
                         };
 
-                        if (arg_parsed.value) |range| {
-                            @field(res, field.name) = argValue(field.type.Value, range.getText(argument)) catch {
+                        if (arg_parsed.value) |value| {
+                            @field(res, field.name) = argValue(field.type.Value, value) catch {
                                 try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), full_name });
                                 return error.WrongValueType;
                             };
@@ -136,7 +143,7 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
                 if (field.defaultValue()) |def| {
                     if (def.positional) {
                         if (count == parsed_positional) {
-                            @field(res, field.name) = argValue(@field(field.type, "Value"), argument) catch {
+                            @field(res, field.name) = argValue(@field(field.type, "Value"), name) catch {
                                 try diag.print("Expect a value of type '{s}' for positional argument '--{s}'", .{ arg.typeStr(field), kebabFromSnake(field.name) });
                                 return error.WrongValueType;
                             };
@@ -164,40 +171,22 @@ fn parseCmd(Args: type, args_iter: anytype, diag: *Diag) AllErrors!arg.ParsedArg
     return res;
 }
 
-fn matchField(field: Type.StructField, arg_name: Span.ToSource) bool {
-    return switch (arg_name) {
-        .long => |n| std.mem.eql(u8, field.name, n),
-        .short => |n| matchFieldShort(field, n),
-    };
+fn matchField(field: Type.StructField, arg_name: []const u8, short: bool) bool {
+    if (short) {
+        return matchFieldShort(field, arg_name[0]);
+    }
+
+    return std.mem.eql(u8, field.name, arg_name);
 }
 
 fn matchFieldShort(field: Type.StructField, arg_name: u8) bool {
     if (field.defaultValue()) |def| {
         if (def.short) |short| {
-            if (short == arg_name) {
-                return true;
-            }
+            return short == arg_name;
         }
     }
 
     return false;
-}
-
-/// Performs some comptime type checking on argument iterator
-fn validateIter(iter: anytype) void {
-    // It has to be a pointer because we give it to other commands too
-    if (@typeInfo(@TypeOf(iter)) != .pointer) @compileError("Iter must be a pointer");
-
-    const T = @TypeOf(iter.*);
-
-    if (!@hasDecl(T, "next")) {
-        @compileError("cli_args's type must have a `next` function");
-    }
-    const ret_type = @typeInfo(@TypeOf(@field(T, "next"))).@"fn".return_type;
-
-    if (ret_type != ?[]const u8 and ret_type != ?[:0]const u8) {
-        @compileError("`next` function must return a `[]const u8` or a `[:0]const u8`");
-    }
 }
 
 fn argValue(T: type, value: []const u8) error{TypeMismatch}!T {
@@ -213,21 +202,25 @@ fn argValue(T: type, value: []const u8) error{TypeMismatch}!T {
 }
 
 const ParsedArgRes = struct {
-    name: Span,
-    full_name: Span,
-    value: ?Span,
+    name: []const u8,
+    full_name: []const u8,
+    value: ?[]const u8,
     is_short: bool,
     is_cmd: bool,
 };
 
 /// Modifies inplace the text to avoid allocation
-fn getNameAndValueRanges(text: []u8) Error!ParsedArgRes {
+fn getNameAndValueRanges(self: *Self, op: Config.Op) Error!ParsedArgRes {
     const State = enum { start, name, value };
 
     var dashes: usize = 0;
     var current: usize = 0;
-    var name: Span = .{ .end = text.len };
-    var value: ?Span = null;
+    var full_name: []const u8 = undefined;
+    var name: []const u8 = undefined;
+    var name_start: usize = 0;
+    var value: ?[]const u8 = null;
+
+    var text = self.advance();
 
     s: switch (State.start) {
         .start => {
@@ -237,226 +230,51 @@ fn getNameAndValueRanges(text: []u8) Error!ParsedArgRes {
             }
 
             if (text[current] != '-') {
-                name.start = current;
+                name_start = current;
                 continue :s .name;
             }
+
             dashes += 1;
             current += 1;
             continue :s .start;
         },
         .name => {
-            if (current == text.len) break :s;
-            if (text[current] == '-') text[current] = '_';
-            if (text[current] == '=') {
-                name.end = current;
-                current += 1;
+            name = text[name_start..current];
+            full_name = text[0..current];
 
+            if (current == text.len) {
+                if (op == .space and self.current < self.args.len) {
+                    // If next starts with '-', it's an argument, not a value
+                    if (self.at()[0] == '-') {
+                        break :s;
+                    }
+
+                    current = 0;
+                    text = self.advance();
+                    continue :s .value;
+                }
+
+                break :s;
+            }
+
+            if (text[current] == '-') text[current] = '_';
+
+            if (op.eq(text[current])) {
+                current += 1;
                 continue :s .value;
             }
 
             current += 1;
             continue :s .name;
         },
-        .value => value = .{ .start = current, .end = text.len },
+        .value => value = text[current..text.len],
     }
 
     return .{
         .name = name,
-        .full_name = .{ .end = name.end },
+        .full_name = full_name,
         .value = value,
         .is_short = dashes == 1,
         .is_cmd = text[0] != '-',
     };
-}
-
-// ------
-//  Help
-// ------
-pub fn help(Args: type, writer: *Writer) !void {
-    const ArgsWithHelp = arg.ArgsWithHelp(Args);
-
-    // 2 for "--" and 2 for indentation
-    const max_len = comptime arg.maxLen(ArgsWithHelp) + 4;
-    const info = @typeInfo(ArgsWithHelp).@"struct";
-
-    try printUsage(info, writer);
-    try printDesc(Args, writer);
-    try printCmds(info, writer, max_len);
-    try printPositionals(info, writer, max_len);
-    try printOptions(info, writer, max_len);
-}
-
-pub fn helpToFile(Args: type, file: std.fs.File) !void {
-    var buf: [2048]u8 = undefined;
-    var writer = file.writer(&buf);
-    try help(Args, &writer.interface);
-    return writer.interface.flush();
-}
-
-fn printUsage(info: Type.Struct, writer: *Writer) !void {
-    try writer.writeAll("Usage:\n");
-    try writer.print("  {s} [options] [args]\n", .{prog});
-
-    // Check if there is at least one command
-    var found = false;
-    inline for (info.fields) |field| {
-        if (!found and @typeInfo(field.type.Value) == .@"struct") {
-            found = true;
-            try writer.print("  {s} [commands] [options] [args]\n", .{prog});
-        }
-    }
-    try writer.writeAll("\n");
-}
-
-fn printDesc(Args: type, writer: *Writer) !void {
-    if (!@hasDecl(Args, "description")) return;
-
-    try writer.writeAll("Description:\n");
-    var it = std.mem.splitScalar(u8, Args.description, '\n');
-
-    while (it.next()) |line| {
-        try writer.print("  {s}\n", .{line});
-    }
-    try writer.writeAll("\n");
-}
-
-fn printCmds(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void {
-    var found = false;
-
-    inline for (info.fields) |field| {
-        if (arg.is(field, .cmd)) {
-            if (!found) {
-                try writer.writeAll("Commands:\n");
-            }
-            found = true;
-
-            const name = comptime kebabFromSnake(field.name);
-            const text = "  " ++ name;
-
-            // Case: cmd: Arg(CmdArgs) = .{}
-            if (field.defaultValue()) |def_val| {
-                const desc_field = def_val.desc;
-                // Case: cmd: Arg(CmdArgs) = .{ .desc = "foo" }
-                if (desc_field.len > 0) {
-                    try writer.print(
-                        "{[text]s:<[width]}  {[description]s}\n",
-                        .{ .text = text, .description = def_val.desc, .width = max_len },
-                    );
-                } else {
-                    try writer.print("{s}\n", .{text});
-                }
-            }
-            // Case: cmd: Arg(CmdArgs)
-            else {
-                try writer.writeAll("  " ++ name ++ "\n");
-            }
-        }
-    }
-
-    if (found) try writer.writeAll("\n");
-}
-
-fn printPositionals(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void {
-    var found = false;
-
-    inline for (info.fields) |field| {
-        comptime var text: []const u8 = "  ";
-
-        // If positional, it is case: arg: Arg(bool) = .{ .positional = true }
-        // so always a default value
-        if (comptime arg.is(field, .positional)) {
-            const def_val = field.defaultValue().?;
-            if (!found) {
-                try writer.writeAll("Arguments:\n");
-            }
-            found = true;
-
-            comptime text = text ++ arg.typeStr(field);
-
-            const desc_field = @field(def_val, "desc");
-            // Case: arg: Arg(bool) = .{ .desc = "foo" }
-            if (desc_field.len > 0) {
-                try writer.print(
-                    "{[text]s:<[width]}  {[description]s}",
-                    .{ .text = text, .description = def_val.desc, .width = max_len },
-                );
-            } else {
-                try writer.print("{s}", .{text});
-            }
-
-            try printDefault(field, writer);
-            try additionalData(writer, field, max_len);
-            try writer.writeAll("\n");
-        }
-    }
-
-    if (found) try writer.writeAll("\n");
-}
-
-fn printOptions(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void {
-    try writer.writeAll("Options:\n");
-
-    inline for (info.fields) |field| {
-        comptime var text: []const u8 = "  ";
-
-        if (comptime !(arg.is(field, .cmd) or arg.is(field, .positional))) {
-            // Case: arg: Arg(bool) = .{}
-            if (field.defaultValue()) |def_val| {
-                if (def_val.short) |short| {
-                    text = text ++ "-" ++ .{short} ++ ", ";
-                }
-
-                const type_text = comptime arg.typeStr(field);
-                comptime text = text ++ kebabFromSnakeDash(field.name) ++ if (type_text.len > 0) " " ++ type_text else "";
-
-                const desc_field = def_val.desc;
-                // Case: arg: Arg(bool) = .{ .desc = "foo" }
-                if (desc_field.len > 0) {
-                    try writer.print(
-                        "{[text]s:<[width]}  {[description]s}",
-                        .{ .text = text, .description = def_val.desc, .width = max_len },
-                    );
-                } else {
-                    try writer.print("{s}", .{text});
-                }
-            }
-            // Case: arg: Arg(bool)
-            else {
-                try writer.writeAll("  " ++ comptime kebabFromSnakeDash(field.name) ++ " " ++ arg.typeStr(field));
-            }
-
-            try printDefault(field, writer);
-            try printRequired(field, writer);
-            try additionalData(writer, field, max_len);
-
-            try writer.writeAll("\n");
-        }
-    }
-}
-
-/// Prints argument default value if one
-fn printDefault(field: Type.StructField, writer: *Writer) !void {
-    if (field.type.default) |default| {
-        const Def = @TypeOf(default);
-        const info = @typeInfo(Def);
-
-        if (info == .@"enum") {
-            try writer.print(" [default: {t}]", .{default});
-        } else if (Def == []const u8) {
-            try writer.print(" [default: \"{s}\"]", .{default});
-        }
-        // We don't print [default: false] for bools
-        else if (Def != bool) {
-            try writer.print(" [default: {any}]", .{default});
-        }
-    }
-}
-
-/// Prints argument default value if one
-fn printRequired(field: Type.StructField, writer: *Writer) !void {
-    if (field.defaultValue()) |def| {
-        if (def.required) {
-            try writer.writeAll(" [required]");
-        }
-    }
 }

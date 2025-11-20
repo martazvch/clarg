@@ -19,10 +19,9 @@ test "type args" {
     };
 
     {
-        var iter = try SliceIter.fromString(allocator, "");
-        defer iter.deinit(allocator);
+        const args = [_][:0]const u8{"prog"};
         var diag: Diag = .empty;
-        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
 
         try expect(!parsed.arg1);
         try expect(parsed.arg2 == null);
@@ -32,10 +31,9 @@ test "type args" {
         try expect(parsed.arg6 == null);
     }
     {
-        var iter = try SliceIter.fromString(allocator, "--arg1 --arg2=4 --arg6=medium --arg4=config.txt --arg3=56.7 --arg5=release");
-        defer iter.deinit(allocator);
+        const args = [_][:0]const u8{ "prog", "--arg1", "--arg2=4", "--arg6=medium", "--arg4=config.txt", "--arg3=56.7", "--arg5=release" };
         var diag: Diag = .empty;
-        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
 
         try expect(parsed.arg1);
         try expect(parsed.arg2.? == 4);
@@ -56,10 +54,9 @@ test "value args" {
     };
 
     {
-        var iter = try SliceIter.fromString(allocator, "");
-        defer iter.deinit(allocator);
+        const args = [_][:0]const u8{"prog"};
         var diag: Diag = .empty;
-        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
 
         try expect(parsed.arg1 == false);
         try expect(parsed.arg2 == 4);
@@ -68,10 +65,9 @@ test "value args" {
         try expect(parsed.arg5 == .large);
     }
     {
-        var iter = try SliceIter.fromString(allocator, "--arg1 --arg2=4 --arg5=medium --arg4=config.txt --arg3=56.7");
-        defer iter.deinit(allocator);
+        const args = [_][:0]const u8{ "prog", "--arg1", "--arg2=4", "--arg5=medium", "--arg4=config.txt", "--arg3=56.7" };
         var diag: Diag = .empty;
-        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
 
         try expect(parsed.arg1);
         try expect(parsed.arg2 == 4);
@@ -91,10 +87,9 @@ test "with default value" {
     };
 
     {
-        var iter = try SliceIter.fromString(allocator, "");
-        defer iter.deinit(allocator);
+        const args = [_][:0]const u8{"prog"};
         var diag: Diag = .empty;
-        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
 
         try expect(parsed.arg1 == false);
         try expect(parsed.arg2 == 4);
@@ -103,10 +98,9 @@ test "with default value" {
         try expect(parsed.arg5 == .large);
     }
     {
-        var iter = try SliceIter.fromString(allocator, "--arg1 --arg2=4 --arg5=medium --arg4=config.txt --arg3=56.7");
-        defer iter.deinit(allocator);
+        const args = [_][:0]const u8{ "prog", "--arg1", "--arg2=4", "--arg5=medium", "--arg4=config.txt", "--arg3=56.7" };
         var diag: Diag = .empty;
-        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
 
         try expect(parsed.arg1);
         try expect(parsed.arg2 == 4);
@@ -126,10 +120,9 @@ test "short" {
     };
 
     {
-        var iter = try SliceIter.fromString(allocator, "-t=small -a -f=98.24 -g=file.txt");
-        defer iter.deinit(allocator);
+        const args = [_][:0]const u8{ "prog", "-t=small", "-a", "-f=98.24", "-g=file.txt" };
         var diag: Diag = .empty;
-        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
 
         try expect(parsed.arg1);
         try expect(parsed.arg2 == 4);
@@ -150,10 +143,9 @@ test "positional" {
     };
 
     {
-        var iter = try SliceIter.fromString(allocator, "998.123 -arg2=34 --arg1 medium -g=alright 98");
-        defer iter.deinit(allocator);
+        const args = [_][:0]const u8{ "prog", "998.123", "--arg2=34", "--arg1", "medium", "-g=alright", "98" };
         var diag: Diag = .empty;
-        const parsed = try clarg.parse("prog", Args, &iter, &diag, .{ .skip_first = false });
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
 
         try expect(parsed.arg1);
         try expect(parsed.arg2 == 34);
@@ -190,10 +182,9 @@ test "commands" {
         // We pass the arg as --it_count because clarg is gonna try to modify it but I feel that
         // @constCast() an comptime string like this one is the cause of the Bus error.
         // I don't know how to test it without this hack. Works properly when tried in real.
-        var iter = try SliceIter.fromString(allocator, "cmd -o=mul --it_count=75");
-        defer iter.deinit(allocator);
+        const args = [_][:0]const u8{ "prog", "cmd", "-o=mul", "--it_count=75" };
         var diag: Diag = .empty;
-        const parsed = try clarg.parse("prog", CmdArgs, &iter, &diag, .{ .skip_first = false });
+        const parsed = try clarg.parse(CmdArgs, &args, &diag, .{});
 
         try expect(parsed.arg == 5);
         try expect(parsed.size == .large);
@@ -208,10 +199,9 @@ test "commands" {
 
     {
         // We pass the cmd as cmd_compile for the same reason as above
-        var iter = try SliceIter.fromString(allocator, "cmd_compile -p=myplace --print_ir");
-        defer iter.deinit(allocator);
+        const args = [_][:0]const u8{ "prog", "cmd_compile", "-p=myplace", "--print_ir" };
         var diag: Diag = .empty;
-        const parsed = try clarg.parse("prog", CmdArgs, &iter, &diag, .{ .skip_first = false });
+        const parsed = try clarg.parse(CmdArgs, &args, &diag, .{});
 
         try expect(parsed.arg == 5);
         try expect(parsed.size == .large);
@@ -222,5 +212,53 @@ test "commands" {
         const cmd = parsed.cmd_compile orelse unreachable;
         try expect(cmd.print_ir);
         try expect(std.mem.eql(u8, cmd.dir_path, "myplace"));
+    }
+}
+
+test "separators" {
+    const Args = struct {
+        arg1: Arg(bool),
+        arg2: Arg(i64),
+        arg3: Arg(f64),
+        arg4: Arg([]const u8),
+        arg5: Arg(.string),
+        arg6: Arg(Size),
+    };
+
+    {
+        const args = [_][:0]const u8{ "prog", "--arg1", "--arg2=4", "--arg6=medium", "--arg4=config.txt", "--arg3=56.7", "--arg5=release" };
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse(Args, &args, &diag, .{ .op = .equal });
+
+        try expect(parsed.arg1);
+        try expect(parsed.arg2.? == 4);
+        try expect(parsed.arg3.? == 56.7);
+        try expect(std.mem.eql(u8, parsed.arg4.?, "config.txt"));
+        try expect(std.mem.eql(u8, parsed.arg5.?, "release"));
+        try expect(parsed.arg6.? == .medium);
+    }
+    {
+        const args = [_][:0]const u8{ "prog", "--arg1", "--arg2:4", "--arg6:medium", "--arg4:config.txt", "--arg3:56.7", "--arg5:release" };
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse(Args, &args, &diag, .{ .op = .colon });
+
+        try expect(parsed.arg1);
+        try expect(parsed.arg2.? == 4);
+        try expect(parsed.arg3.? == 56.7);
+        try expect(std.mem.eql(u8, parsed.arg4.?, "config.txt"));
+        try expect(std.mem.eql(u8, parsed.arg5.?, "release"));
+        try expect(parsed.arg6.? == .medium);
+    }
+    {
+        const args = [_][:0]const u8{ "prog", "--arg1", "--arg2", "4", "--arg6", "medium", "--arg4", "config.txt", "--arg3", "56.7", "--arg5", "release" };
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse(Args, &args, &diag, .{ .op = .space });
+
+        try expect(parsed.arg1);
+        try expect(parsed.arg2.? == 4);
+        try expect(parsed.arg3.? == 56.7);
+        try expect(std.mem.eql(u8, parsed.arg4.?, "config.txt"));
+        try expect(std.mem.eql(u8, parsed.arg5.?, "release"));
+        try expect(parsed.arg6.? == .medium);
     }
 }

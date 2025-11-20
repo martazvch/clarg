@@ -78,10 +78,14 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     var diag: clarg.Diag = .empty;
-    var args = try std.process.argsWithAllocator(gpa.allocator());
-    defer args.deinit();
+    const args = try std.process.argsAlloc(gpa.allocator());
+    defer std.process.argsFree(gpa.allocator(), args);
 
-    const parsed = clarg.parse("basic", Args, &args, &diag, .{}) catch {
+    const config: clarg.Config = .{
+        .op = .space,
+    };
+
+    const parsed = clarg.parse(Args, args, &diag, config) catch {
         try diag.reportToFile(.stderr());
         std.process.exit(1);
     };
