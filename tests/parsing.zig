@@ -262,3 +262,18 @@ test "separators" {
         try expect(parsed.arg6.? == .medium);
     }
 }
+
+test "required" {
+    const Args = struct {
+        arg1: Arg(i64) = .{ .required = true },
+    };
+
+    {
+        const args = [_][:0]const u8{ "prog", "--arg1=4" };
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse(Args, &args, &diag, .{ .op = .equal });
+
+        // No need to '.?' thanks to the 'required' flag
+        try expect(parsed.arg1 == 4);
+    }
+}

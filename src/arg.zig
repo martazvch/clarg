@@ -8,8 +8,11 @@ pub fn Arg(arg: anytype) type {
         positional: bool = false,
         required: bool = false,
 
+        /// Allow to store subcommands type to parse recursively
         pub const Declared = if (@typeInfo(arg) == .@"struct") arg else @TypeOf(arg);
+        /// Value's type
         pub const Value: type = ArgType(arg);
+        /// Default value made from what we have inside 'Arg(...)'
         pub const default: ?Value = makeDefault(Value, arg);
     };
 }
@@ -132,18 +135,37 @@ pub fn ParsedArgs(Args1: type) type {
 
     inline for (info.fields, 0..) |f, i| {
         const T, const val = b: {
-            if (@typeInfo(f.type) != .@"struct") break :b .{ f.type, f.default_value_ptr };
+            // We're in this case when parsing a subcommand
+            // When declared, the `Value` field is computed and types are no longer arg.Arg(...)
+            // but the raw type inside
+            if (@typeInfo(f.type) != .@"struct") {
+                break :b .{ f.type, f.default_value_ptr };
+            }
 
+            // Get value's type
             const Value = f.type.Value;
-
             const def = f.type.default orelse {
+                // If no default value, we emit a `null` casted to the correct type
                 if (is(f, .cmd)) {
                     const T = ParsedArgs(f.type.Value);
                     break :b .{ ?T, @as(?T, null) };
                 }
 
+                // If there is a default value of the Arg structure (Arg(..) = .{...})
+                // we check if the argument is required. If so, we don't mark it's type as optional
+                if (f.defaultValue()) |default| {
+                    // If we parse a subcommand, there are no struct anymore but the raw type
+                    if (@typeInfo(@TypeOf(default)) == .@"struct") {
+                        if (default.required) {
+                            break :b .{ Value, @as(Value, undefined) };
+                        }
+                    }
+                }
+
+                // Otherwise we emit a null casted to the correct type
                 break :b .{ ?Value, @as(?Value, null) };
             };
+
             break :b .{ Value, def };
         };
 
