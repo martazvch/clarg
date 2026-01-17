@@ -73,25 +73,21 @@ const Args = struct {
     ;
 };
 
-pub fn main() !void {
-    var gpa = std.heap.DebugAllocator(.{}){};
-    defer _ = gpa.deinit();
-
+pub fn main(init: std.process.Init) !void {
     var diag: clarg.Diag = .empty;
-    const args = try std.process.argsAlloc(gpa.allocator());
-    defer std.process.argsFree(gpa.allocator(), args);
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     const config: clarg.Config = .{
         .op = .space,
     };
 
     const parsed = clarg.parse(Args, args, &diag, config) catch {
-        try diag.reportToFile(.stderr());
+        try diag.reportToFile(init.io, .stderr());
         std.process.exit(1);
     };
 
     if (parsed.help) {
-        try clarg.helpToFile(Args, .stderr());
+        try clarg.helpToFile(Args, init.io, .stderr());
         return;
     }
 
@@ -113,7 +109,7 @@ pub fn main() !void {
     // Sub command usage
     if (parsed.cmd) |cmd| {
         if (cmd.help) {
-            try clarg.helpToFile(OpCmdArgs, .stderr());
+            try clarg.helpToFile(OpCmdArgs, init.io, .stderr());
         }
     }
 }
