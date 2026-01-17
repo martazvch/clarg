@@ -75,10 +75,20 @@ fn printCmds(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void 
                 const desc_field = def_val.desc;
                 // Case: cmd: Arg(CmdArgs) = .{ .desc = "foo" }
                 if (desc_field.len > 0) {
+                    var desc_line_iter = std.mem.splitScalar(u8, def_val.desc, '\n');
+
+                    const first_line = desc_line_iter.first();
                     try writer.print(
-                        "{[text]s:<[width]}  {[description]s}\n",
-                        .{ .text = text, .description = def_val.desc, .width = max_len },
+                        "{[text]s:<[width]} {[description]s}\n",
+                        .{ .text = text, .width = max_len, .description = first_line },
                     );
+
+                    while (desc_line_iter.next()) |desc_line| {
+                        try writer.print(
+                            "{[text]s:<[width]} {[description]s}\n",
+                            .{ .text = "", .width = max_len, .description = desc_line },
+                        );
+                    }
                 } else {
                     try writer.print("{s}\n", .{text});
                 }
@@ -113,10 +123,20 @@ fn printPositionals(info: Type.Struct, writer: *Writer, comptime max_len: usize)
             const desc_field = @field(def_val, "desc");
             // Case: arg: Arg(bool) = .{ .desc = "foo" }
             if (desc_field.len > 0) {
+                var desc_line_iter = std.mem.splitScalar(u8, def_val.desc, '\n');
+
+                const first_line = desc_line_iter.first();
                 try writer.print(
-                    "{[text]s:<[width]}  {[description]s}",
-                    .{ .text = text, .description = def_val.desc, .width = max_len },
+                    "{[text]s:<[width]} {[description]s}\n",
+                    .{ .text = text, .width = max_len, .description = first_line },
                 );
+
+                while (desc_line_iter.next()) |desc_line| {
+                    try writer.print(
+                        "{[text]s:<[width]} {[description]s}\n",
+                        .{ .text = "", .width = max_len, .description = desc_line },
+                    );
+                }
             } else {
                 try writer.print("{s}", .{text});
             }
@@ -149,10 +169,20 @@ fn printOptions(info: Type.Struct, writer: *Writer, comptime max_len: usize) !vo
                 const desc_field = def_val.desc;
                 // Case: arg: Arg(bool) = .{ .desc = "foo" }
                 if (desc_field.len > 0) {
+                    var desc_line_iter = std.mem.splitScalar(u8, def_val.desc, '\n');
+
+                    const first_line = desc_line_iter.first();
                     try writer.print(
-                        "{[text]s:<[width]}  {[description]s}",
-                        .{ .text = text, .description = def_val.desc, .width = max_len },
+                        "{[text]s:<[width]} {[description]s}\n",
+                        .{ .text = text, .width = max_len, .description = first_line },
                     );
+
+                    while (desc_line_iter.next()) |desc_line| {
+                        try writer.print(
+                            "{[text]s:<[width]} {[description]s}\n",
+                            .{ .text = "", .width = max_len, .description = desc_line },
+                        );
+                    }
                 } else {
                     try writer.print("{s}", .{text});
                 }
