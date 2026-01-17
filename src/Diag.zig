@@ -17,10 +17,7 @@ pub fn report(self: *const Self) []const u8 {
     return self.msg[0..self.len];
 }
 
-pub fn reportToFile(self: *const Self, file: std.fs.File) std.Io.Writer.Error!void {
-    var buf: [1024]u8 = undefined;
-    var writer = file.writer(&buf);
-    const w = &writer.interface;
-    try w.print("{s}\n", .{self.report()});
-    try w.flush();
+pub fn reportToFile(self: *const Self, io: std.Io, file: std.Io.File) std.Io.Writer.Error!void {
+    var writer = file.writer(io, &.{});
+    try writer.interface.writeAll(self.report());
 }
