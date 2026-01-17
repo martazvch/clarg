@@ -61,6 +61,14 @@ const Args = struct {
     file: Arg(.string) = .{ .positional = true },
     outdir: Arg("/tmp") = .{ .positional = true },
 
+    // Descriptions can span multiple lines.
+    frobnicate: Arg(.string) = .{
+        .desc =
+        \\does foo, bar, baz, and other really long things
+        \\when frobnicate fails, the universe will explode, or something
+        ,
+    },
+
     // -------------
     // Sub-commands
     //   They are simply defined by giving a structure as argument's type
