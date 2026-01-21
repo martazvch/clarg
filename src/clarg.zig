@@ -7,6 +7,7 @@ const ProtoErr = @import("proto.zig").Error;
 const utils = @import("utils.zig");
 const Span = utils.Span;
 const kebabFromSnake = utils.kebabFromSnake;
+const snakeFromKebab = utils.snakeFromKebab;
 
 const arg = @import("arg.zig");
 const Diag = @import("Diag.zig");
@@ -143,7 +144,8 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, config: Config) AllErrors!arg.
                 if (field.defaultValue()) |def| {
                     if (def.positional) {
                         if (count == parsed_positional) {
-                            @field(res, field.name) = argValue(@field(field.type, "Value"), name) catch {
+                            // We revert the conversion from snake to kebab
+                            @field(res, field.name) = argValue(@field(field.type, "Value"), snakeFromKebab(@constCast(name))) catch {
                                 try diag.print("Expect a value of type '{s}' for positional argument '--{s}'", .{ arg.typeStr(field), kebabFromSnake(field.name) });
                                 return error.WrongValueType;
                             };

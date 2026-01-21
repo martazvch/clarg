@@ -112,7 +112,7 @@ fn printPositionals(info: Type.Struct, writer: *Writer, comptime max_len: usize)
             if (desc_field.len > 0) {
                 try printMultiline(writer, name_text, desc_field, max_len);
             } else {
-                try writer.print("{s}\n", .{name_text});
+                try writer.print("{s}", .{name_text});
             }
 
             try addExtraInfo(writer, field, max_len, .{ .required = false, .pad = desc_field.len > 0 });

@@ -179,10 +179,10 @@ test "commands" {
     };
 
     {
-        // We pass the arg as --it_count because clarg is gonna try to modify it but I feel that
-        // @constCast() an comptime string like this one is the cause of the Bus error.
-        // I don't know how to test it without this hack. Works properly when tried in real.
-        const args = [_][:0]const u8{ "prog", "cmd", "-o=mul", "--it_count=75" };
+        const heap_it_count = try heapAllocString("--it-count=75");
+        defer allocator.free(heap_it_count);
+
+        const args = [_][:0]const u8{ "prog", "cmd", "-o=mul", heap_it_count };
         var diag: Diag = .empty;
         const parsed = try clarg.parse(CmdArgs, &args, &diag, .{});
 
@@ -199,7 +199,12 @@ test "commands" {
 
     {
         // We pass the cmd as cmd_compile for the same reason as above
-        const args = [_][:0]const u8{ "prog", "cmd_compile", "-p=myplace", "--print_ir" };
+        const heap_print_ir = try heapAllocString("print-ir");
+        defer allocator.free(heap_print_ir);
+        const heap_cmp_compile = try heapAllocString("cmd-compile");
+        defer allocator.free(heap_cmp_compile);
+
+        const args = [_][:0]const u8{ "prog", heap_cmp_compile, "-p=myplace", heap_print_ir };
         var diag: Diag = .empty;
         const parsed = try clarg.parse(CmdArgs, &args, &diag, .{});
 
@@ -276,4 +281,29 @@ test "required" {
         // No need to '.?' thanks to the 'required' flag
         try expect(parsed.arg1 == 4);
     }
+}
+
+test "positional with dashes" {
+    const Args = struct {
+        file: Arg(.string) = .{ .positional = true },
+    };
+
+    {
+        const heap_file = try heapAllocString("file-path-with-dash.txt");
+        defer allocator.free(heap_file);
+
+        const args = [_][:0]const u8{ "prog", heap_file };
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse(Args, &args, &diag, .{ .op = .equal });
+
+        // No need to '.?' thanks to the 'required' flag
+        try expect(std.mem.eql(u8, parsed.file.?, "file-path-with-dash.txt"));
+    }
+}
+
+/// Heap allocate because args with dashes are mutated in place
+fn heapAllocString(string: []const u8) ![:0]const u8 {
+    const path = try allocator.allocSentinel(u8, string.len, 0);
+    @memcpy(path, string);
+    return path;
 }
