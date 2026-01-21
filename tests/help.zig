@@ -44,10 +44,10 @@ test "auto-gen with type only" {
         \\  -s, --arg3 <float>  Third argument, this one is a string
         \\  --arg4 <string>
         \\  -p, --arg5 <enum>   Choose the size you want
-        \\                        Supported values:
-        \\                          small
-        \\                          medium
-        \\                          large
+        \\                          Supported values:
+        \\                              small
+        \\                              medium
+        \\                              large
         \\  -h, --help          Prints this help and exit
         \\
         ,
@@ -73,14 +73,18 @@ test "auto-gen with default value" {
         \\  prog2 [options] [args]
         \\
         \\Options:
-        \\  --arg1 <int>        Still the first argument [default: 123]
-        \\  -f, --arg2 <float>  Gimme a float [default: 45.8]
-        \\  --arg3 <string>     Bring me home [default: "/home"]
-        \\  -s, --arg4 <enum>   Matter of taste [default: large]
-        \\                        Supported values:
-        \\                          small
-        \\                          medium
-        \\                          large
+        \\  --arg1 <int>        Still the first argument
+        \\                          [default: 123]
+        \\  -f, --arg2 <float>  Gimme a float
+        \\                          [default: 45.8]
+        \\  --arg3 <string>     Bring me home
+        \\                          [default: "/home"]
+        \\  -s, --arg4 <enum>   Matter of taste
+        \\                          [default: large]
+        \\                          Supported values:
+        \\                              small
+        \\                              medium
+        \\                              large
         \\  -h, --help          Prints this help and exit
         \\
         ,
@@ -137,11 +141,13 @@ test "auto-gen with description" {
         \\  and then tries to render them in a nice way
         \\
         \\Arguments:
-        \\  <string>              path [default: "/home"]
+        \\  <string>              path
+        \\                            [default: "/home"]
         \\
         \\Options:
         \\  --arg1 <string>       Can use this enum literal
-        \\  -i, --it-count <int>  iteration count [default: 5]
+        \\  -i, --it-count <int>  iteration count
+        \\                            [default: 5]
         \\  -h, --help            Prints this help and exit
         \\
         ,
@@ -187,11 +193,12 @@ test "with sub-commands" {
             \\
             \\Options:
             \\  --arg-arg <int> [default: 5]
-            \\  -s, --size <enum>  matter of taste [default: large]
-            \\                       Supported values:
-            \\                         small
-            \\                         medium
-            \\                         large
+            \\  -s, --size <enum>  matter of taste
+            \\                         [default: large]
+            \\                         Supported values:
+            \\                             small
+            \\                             medium
+            \\                             large
             \\  -h, --help
             \\
             ,
@@ -209,13 +216,15 @@ test "with sub-commands" {
             \\  rover [options] [args]
             \\
             \\Options:
-            \\  -i, --it-count <int>  iteration count [default: 5]
-            \\  -o, --op <enum>       operation [default: add]
-            \\                          Supported values:
-            \\                            add
-            \\                            sub
-            \\                            mul
-            \\                            div
+            \\  -i, --it-count <int>  iteration count
+            \\                            [default: 5]
+            \\  -o, --op <enum>       operation
+            \\                            [default: add]
+            \\                            Supported values:
+            \\                                add
+            \\                                sub
+            \\                                mul
+            \\                                div
             \\  -h, --help
             \\
             ,
@@ -270,12 +279,47 @@ test "required args" {
         \\  and then tries to render them in a nice way
         \\
         \\Arguments:
-        \\  <string>              path [default: "/home"]
+        \\  <string>              path
+        \\                            [default: "/home"]
         \\
         \\Options:
-        \\  --arg1 <string>       Can use this enum literal [required]
-        \\  -i, --it-count <int>  iteration count [default: 5] [required]
+        \\  --arg1 <string>       Can use this enum literal
+        \\                            [required]
+        \\  -i, --it-count <int>  iteration count
+        \\                            [default: 5] [required]
         \\  -h, --help            Prints this help and exit
+        \\
+        ,
+    );
+}
+
+test "multilines arg description" {
+    const Args = struct {
+        it_count: Arg(5) = .{
+            .desc =
+            \\iteration count
+            \\iterates `it_count` times
+            \\long description for an obvious name
+            ,
+        },
+    };
+
+    var wa = std.Io.Writer.Allocating.init(allocator);
+    defer wa.deinit();
+    try genHelp(Args, &wa.writer, "data-visu");
+
+    try clargTest(
+        @src().fn_name,
+        wa.writer.buffered(),
+        \\Usage:
+        \\  data-visu [options] [args]
+        \\
+        \\Options:
+        \\  --it-count <int>  iteration count
+        \\                    iterates `it_count` times
+        \\                    long description for an obvious name
+        \\                        [default: 5]
+        \\  -h, --help        Prints this help and exit
         \\
         ,
     );

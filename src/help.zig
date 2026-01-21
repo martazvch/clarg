@@ -68,29 +68,16 @@ fn printCmds(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void 
             found = true;
 
             const name = comptime kebabFromSnake(field.name);
-            const text = "  " ++ name;
+            const name_text = "  " ++ name;
 
             // Case: cmd: Arg(CmdArgs) = .{}
             if (field.defaultValue()) |def_val| {
                 const desc_field = def_val.desc;
                 // Case: cmd: Arg(CmdArgs) = .{ .desc = "foo" }
                 if (desc_field.len > 0) {
-                    var desc_line_iter = std.mem.splitScalar(u8, def_val.desc, '\n');
-
-                    const first_line = desc_line_iter.first();
-                    try writer.print(
-                        "{[text]s:<[width]} {[description]s}\n",
-                        .{ .text = text, .width = max_len, .description = first_line },
-                    );
-
-                    while (desc_line_iter.next()) |desc_line| {
-                        try writer.print(
-                            "{[text]s:<[width]} {[description]s}\n",
-                            .{ .text = "", .width = max_len, .description = desc_line },
-                        );
-                    }
+                    try printMultiline(writer, name_text, def_val.desc, max_len);
                 } else {
-                    try writer.print("{s}\n", .{text});
+                    try writer.print("{s}\n", .{name_text});
                 }
             }
             // Case: cmd: Arg(CmdArgs)
@@ -107,7 +94,7 @@ fn printPositionals(info: Type.Struct, writer: *Writer, comptime max_len: usize)
     var found = false;
 
     inline for (info.fields) |field| {
-        comptime var text: []const u8 = "  ";
+        comptime var name_text: []const u8 = "  ";
 
         // If positional, it is case: arg: Arg(bool) = .{ .positional = true }
         // so always a default value
@@ -118,32 +105,17 @@ fn printPositionals(info: Type.Struct, writer: *Writer, comptime max_len: usize)
             }
             found = true;
 
-            comptime text = text ++ arg.typeStr(field);
+            comptime name_text = name_text ++ arg.typeStr(field);
 
             const desc_field = @field(def_val, "desc");
             // Case: arg: Arg(bool) = .{ .desc = "foo" }
             if (desc_field.len > 0) {
-                var desc_line_iter = std.mem.splitScalar(u8, def_val.desc, '\n');
-
-                const first_line = desc_line_iter.first();
-                try writer.print(
-                    "{[text]s:<[width]} {[description]s}\n",
-                    .{ .text = text, .width = max_len, .description = first_line },
-                );
-
-                while (desc_line_iter.next()) |desc_line| {
-                    try writer.print(
-                        "{[text]s:<[width]} {[description]s}\n",
-                        .{ .text = "", .width = max_len, .description = desc_line },
-                    );
-                }
+                try printMultiline(writer, name_text, desc_field, max_len);
             } else {
-                try writer.print("{s}", .{text});
+                try writer.print("{s}\n", .{name_text});
             }
 
-            try printDefault(field, writer);
-            try additionalData(writer, field, max_len);
-            try writer.writeAll("\n");
+            try addExtraInfo(writer, field, max_len, .{ .required = false, .pad = desc_field.len > 0 });
         }
     }
 
@@ -154,37 +126,27 @@ fn printOptions(info: Type.Struct, writer: *Writer, comptime max_len: usize) !vo
     try writer.writeAll("Options:\n");
 
     inline for (info.fields) |field| {
-        comptime var text: []const u8 = "  ";
+        comptime var name_text: []const u8 = "  ";
 
         if (comptime !(arg.is(field, .cmd) or arg.is(field, .positional))) {
+            var pad = false;
+
             // Case: arg: Arg(bool) = .{}
             if (field.defaultValue()) |def_val| {
                 if (def_val.short) |short| {
-                    text = text ++ "-" ++ .{short} ++ ", ";
+                    name_text = name_text ++ "-" ++ .{short} ++ ", ";
                 }
 
                 const type_text = comptime arg.typeStr(field);
-                comptime text = text ++ kebabFromSnakeDash(field.name) ++ if (type_text.len > 0) " " ++ type_text else "";
+                comptime name_text = name_text ++ kebabFromSnakeDash(field.name) ++ if (type_text.len > 0) " " ++ type_text else "";
 
                 const desc_field = def_val.desc;
                 // Case: arg: Arg(bool) = .{ .desc = "foo" }
                 if (desc_field.len > 0) {
-                    var desc_line_iter = std.mem.splitScalar(u8, def_val.desc, '\n');
-
-                    const first_line = desc_line_iter.first();
-                    try writer.print(
-                        "{[text]s:<[width]} {[description]s}\n",
-                        .{ .text = text, .width = max_len, .description = first_line },
-                    );
-
-                    while (desc_line_iter.next()) |desc_line| {
-                        try writer.print(
-                            "{[text]s:<[width]} {[description]s}\n",
-                            .{ .text = "", .width = max_len, .description = desc_line },
-                        );
-                    }
+                    try printMultiline(writer, name_text, def_val.desc, max_len);
+                    pad = true;
                 } else {
-                    try writer.print("{s}", .{text});
+                    try writer.print("{s}", .{name_text});
                 }
             }
             // Case: arg: Arg(bool)
@@ -192,17 +154,46 @@ fn printOptions(info: Type.Struct, writer: *Writer, comptime max_len: usize) !vo
                 try writer.writeAll("  " ++ comptime kebabFromSnakeDash(field.name) ++ " " ++ arg.typeStr(field));
             }
 
-            try printDefault(field, writer);
-            try printRequired(field, writer);
-            try additionalData(writer, field, max_len);
-
-            try writer.writeAll("\n");
+            try addExtraInfo(writer, field, max_len, .{ .pad = pad });
         }
     }
 }
 
+const ExtraOpts = struct {
+    default: bool = true,
+    required: bool = true,
+    additional: bool = true,
+    pad: bool,
+};
+fn addExtraInfo(writer: *Writer, field: Type.StructField, comptime max_len: usize, opts: ExtraOpts) !void {
+    var buf: [1024]u8 = undefined;
+    var w = std.Io.Writer.fixed(&buf);
+
+    if (opts.default) {
+        try printDefault(&w, field);
+    }
+    if (opts.required) {
+        try printRequired(&w, field);
+    }
+    const extra = w.buffered();
+    if (extra.len > 0) {
+        if (opts.pad) {
+            try writer.print("{[padding]s:>[len]}", .{ .padding = " ", .len = max_len + 5 });
+        }
+        try writer.writeAll(extra);
+        try writer.writeAll("\n");
+    } else if (!opts.pad) {
+        // We just insert new line
+        try writer.writeAll("\n");
+    }
+
+    if (opts.additional) {
+        try additionalData(writer, field, max_len);
+    }
+}
+
 /// Prints argument default value if one
-fn printDefault(field: Type.StructField, writer: *Writer) !void {
+fn printDefault(writer: *Writer, field: Type.StructField) !void {
     if (field.type.default) |default| {
         const Def = @TypeOf(default);
         const info = @typeInfo(Def);
@@ -220,7 +211,7 @@ fn printDefault(field: Type.StructField, writer: *Writer) !void {
 }
 
 /// Prints argument default value if one
-fn printRequired(field: Type.StructField, writer: *Writer) !void {
+fn printRequired(writer: *Writer, field: Type.StructField) !void {
     if (field.defaultValue()) |def| {
         if (def.required) {
             try writer.writeAll(" [required]");
@@ -229,20 +220,29 @@ fn printRequired(field: Type.StructField, writer: *Writer) !void {
 }
 
 fn additionalData(writer: *Writer, field: Type.StructField, comptime padding: usize) !void {
-    const pad = " " ** (padding + 4);
+    const pad = " " ** (padding + 6);
 
     switch (@typeInfo(@field(field.type, "Value"))) {
         .@"enum" => |infos| {
-            try writer.print("\n{s}Supported values:\n", .{pad});
+            try writer.print("{s}Supported values:\n", .{pad});
 
-            inline for (infos.fields, 0..) |f, i| {
-                try writer.print("{s}  {s}{s}", .{
-                    pad,
-                    f.name,
-                    if (i < infos.fields.len - 1) "\n" else "",
-                });
+            inline for (infos.fields) |f| {
+                try writer.print("{s}    {s}\n", .{ pad, f.name });
             }
         },
         else => {},
+    }
+}
+
+/// Handles multiline descriptions. Returns `true` if multiple lines were printed
+fn printMultiline(writer: *Writer, name: []const u8, desc: []const u8, comptime max_len: usize) !void {
+    var iter = std.mem.splitScalar(u8, desc, '\n');
+    var count: usize = 0;
+
+    while (iter.next()) |desc_line| : (count += 1) {
+        try writer.print(
+            "{[name]s:<[width]}  {[description]s}\n",
+            .{ .name = if (count == 0) name else "", .width = max_len, .description = desc_line },
+        );
     }
 }
