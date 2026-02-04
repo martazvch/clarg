@@ -23,11 +23,9 @@ pub fn kebabFromSnake(comptime text: []const u8) []const u8 {
     return name;
 }
 
-/// Convert snake case to kebab cas. Mutates the string in place
-pub fn snakeFromKebab(text: []u8) []u8 {
+/// Convert kebab case to snake case
+pub fn snakeFromKebab(text: []u8) void {
     for (text) |*c| {
-        if (c.* == '_') c.* = '-';
+        if (c.* == '-') c.* = '_';
     }
-
-    return text;
 }

@@ -18,6 +18,7 @@ current: usize,
 const Self = @This();
 
 const Error = error{
+    ArgTooLong,
     AlreadyParsed,
     ExpectValue,
     WrongValueType,
@@ -34,6 +35,8 @@ pub var prog: []const u8 = "";
 pub const Config = struct {
     /// Assignment operator (token between name and value)
     op: Op = .equal,
+    /// Argument max size (count for both positional argument values and Args structure fields)
+    max_size: usize = 128,
 
     pub const Op = enum {
         equal,
@@ -50,7 +53,7 @@ pub const Config = struct {
     };
 };
 
-pub fn parse(Args: type, args: []const [:0]const u8, diag: *Diag, config: Config) AllErrors!arg.ParsedArgs(Args) {
+pub fn parse(Args: type, args: []const [:0]const u8, diag: *Diag, comptime config: Config) AllErrors!arg.ParsedArgs(Args) {
     prog = args[0];
     var parser: Self = .{ .args = args[1..], .current = 0 };
     return parser.parseCmd(Args, diag, config);
@@ -64,12 +67,7 @@ fn prev(self: *const Self) []const u8 {
     return self.args[self.current - 1];
 }
 
-fn advance(self: *Self) []u8 {
-    self.current += 1;
-    return @constCast(self.args[self.current - 1]);
-}
-
-fn parseCmd(self: *Self, Args: type, diag: *Diag, config: Config) AllErrors!arg.ParsedArgs(Args) {
+fn parseCmd(self: *Self, Args: type, diag: *Diag, comptime config: Config) AllErrors!arg.ParsedArgs(Args) {
     if (@typeInfo(Args) != .@"struct") {
         @compileError("Arguments type must be a structure");
     }
@@ -90,10 +88,29 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, config: Config) AllErrors!arg.
             const name = arg_parsed.name;
             const full_name = arg_parsed.full_name;
 
+            // Scratch buffer that allow to manipulating names, switching from kebab case (cli args)
+            // to snake case (structure field names)
+            if (name.len > config.max_size) {
+                try diag.print(
+                    \\Argument '{s}' size is too big, current max length is {} but found {}
+                    \\You can increase the limit with 'max_size' configuration field
+                ,
+                    .{ name, config.max_size, name.len },
+                );
+                return error.ArgTooLong;
+            }
+
+            // We don't use `arg.maxLen` because name can be either a field of Arg structure or
+            // a positional argument that can be any length. We don't know yet
+            var scratch_buf: [config.max_size]u8 = undefined;
+            const scratch = scratch_buf[0..name.len];
+            @memcpy(scratch, name);
+            snakeFromKebab(scratch);
+
             if (!options_started and arg_parsed.is_cmd) {
                 inline for (infos.fields) |field| {
                     if (comptime arg.is(field, .cmd)) {
-                        if (std.mem.eql(u8, field.name, name)) {
+                        if (std.mem.eql(u8, field.name, scratch)) {
                             @field(res, field.name) = try self.parseCmd(field.type.Declared, diag, config);
                             break :cmd;
                         }
@@ -104,7 +121,7 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, config: Config) AllErrors!arg.
             options_started = true;
 
             inline for (infos.fields) |field| {
-                if (matchField(field, name, arg_parsed.is_short)) {
+                if (matchField(field, scratch, arg_parsed.is_short)) {
                     if (@field(proto.fields, field.name).done) {
                         try diag.print("Already parsed argument '{s}' (or its long/short version)", .{full_name});
                         return error.AlreadyParsed;
@@ -144,9 +161,11 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, config: Config) AllErrors!arg.
                 if (field.defaultValue()) |def| {
                     if (def.positional) {
                         if (count == parsed_positional) {
-                            // We revert the conversion from snake to kebab
-                            @field(res, field.name) = argValue(@field(field.type, "Value"), snakeFromKebab(@constCast(name))) catch {
-                                try diag.print("Expect a value of type '{s}' for positional argument '--{s}'", .{ arg.typeStr(field), kebabFromSnake(field.name) });
+                            @field(res, field.name) = argValue(@field(field.type, "Value"), name) catch {
+                                try diag.print(
+                                    "Expect a value of type '{s}' for positional argument '--{s}'",
+                                    .{ arg.typeStr(field), kebabFromSnake(field.name) },
+                                );
                                 return error.WrongValueType;
                             };
 
@@ -211,6 +230,11 @@ const ParsedArgRes = struct {
     is_cmd: bool,
 };
 
+fn advance(self: *Self) []const u8 {
+    self.current += 1;
+    return self.args[self.current - 1];
+}
+
 /// Modifies inplace the text to avoid allocation
 fn getNameAndValueRanges(self: *Self, op: Config.Op) Error!ParsedArgRes {
     const State = enum { start, name, value };
@@ -258,8 +282,6 @@ fn getNameAndValueRanges(self: *Self, op: Config.Op) Error!ParsedArgRes {
 
                 break :s;
             }
-
-            if (text[current] == '-') text[current] = '_';
 
             if (op.eq(text[current])) {
                 current += 1;
