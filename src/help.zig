@@ -23,9 +23,9 @@ pub fn help(Args: type, writer: *Writer) !void {
     try printOptions(info, writer, max_len);
 }
 
-pub fn helpToFile(Args: type, file: std.fs.File) !void {
+pub fn helpToFile(Args: type, io: std.Io, file: std.Io.File) !void {
     var buf: [2048]u8 = undefined;
-    var writer = file.writer(&buf);
+    var writer = file.writer(io, &buf);
     try help(Args, &writer.interface);
     return writer.interface.flush();
 }

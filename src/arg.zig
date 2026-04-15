@@ -131,7 +131,9 @@ pub fn ParsedArgs(Args1: type) type {
     const Args = ArgsWithHelp(Args1);
 
     const info = @typeInfo(Args).@"struct";
-    var fields: [info.fields.len]StructField = undefined;
+    var field_names: [info.fields.len][]const u8 = undefined;
+    var field_types: [info.fields.len]type = undefined;
+    var field_attrs: [info.fields.len]std.builtin.Type.StructField.Attributes = undefined;
 
     inline for (info.fields, 0..) |f, i| {
         const T, const val = b: {
@@ -170,26 +172,25 @@ pub fn ParsedArgs(Args1: type) type {
         };
 
         // https://ziggit.dev/t/error-comptime-dereference-requires-0-const-u8-to-have-a-well-defined-layout/8200/2
-        fields[i] = .{
-            .name = f.name,
-            .type = T,
+        field_names[i] = f.name;
+        field_types[i] = T;
+        field_attrs[i] = .{
             .default_value_ptr = if (@TypeOf(val) == ?*const anyopaque)
                 val
             else if (T == []const u8)
                 @ptrCast(@as(*const []const u8, &val))
             else
                 &val,
-            .is_comptime = false,
-            .alignment = @alignOf(T),
         };
     }
 
-    return @Type(.{ .@"struct" = .{
-        .fields = &fields,
-        .decls = &.{},
-        .is_tuple = false,
-        .layout = .auto,
-    } });
+    return @Struct(
+        .auto,
+        null,
+        &field_names,
+        &field_types,
+        &field_attrs,
+    );
 }
 
 /// Adds a 'help' field if not user-defined
@@ -205,27 +206,32 @@ pub fn ArgsWithHelp(Args: type) type {
         }
     }
 
-    var fields: [info.fields.len + 1]StructField = undefined;
+    var field_names: [info.fields.len + 1][]const u8 = undefined;
+    var field_types: [info.fields.len + 1]type = undefined;
+    var field_attrs: [info.fields.len + 1]StructField.Attributes = undefined;
 
     inline for (info.fields, 0..) |f, i| {
-        fields[i] = f;
+        field_names[i] = f.name;
+        field_types[i] = f.type;
+        field_attrs[i] = .{
+            .default_value_ptr = f.default_value_ptr,
+        };
     }
 
-    fields[fields.len - 1] = .{
-        .name = "help",
-        .type = Arg(bool),
+    field_names[info.fields.len] = "help";
+    field_types[info.fields.len] = Arg(bool);
+    field_attrs[info.fields.len] = .{
         .default_value_ptr = &Arg(bool){
             .desc = "Prints this help and exit",
             .short = 'h',
         },
-        .is_comptime = false,
-        .alignment = @alignOf(Arg(bool)),
     };
 
-    return @Type(.{ .@"struct" = .{
-        .fields = &fields,
-        .decls = &.{},
-        .is_tuple = false,
-        .layout = .auto,
-    } });
+    return @Struct(
+        .auto,
+        null,
+        &field_names,
+        &field_types,
+        &field_attrs,
+    );
 }

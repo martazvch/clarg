@@ -38,7 +38,9 @@ fn ProtoFields(T: type) type {
 
     const info = @typeInfo(T).@"struct";
 
-    var fields: [info.fields.len]std.builtin.Type.StructField = undefined;
+    var field_names: [info.fields.len][]const u8 = undefined;
+    var field_types: [info.fields.len]type = undefined;
+    var field_attrs: [info.fields.len]std.builtin.Type.StructField.Attributes = undefined;
 
     inline for (info.fields, 0..) |f, i| {
         const required = if (f.defaultValue()) |def|
@@ -46,19 +48,18 @@ fn ProtoFields(T: type) type {
         else
             false;
 
-        fields[i] = .{
-            .name = f.name,
-            .type = ProtoField,
+        field_names[i] = f.name;
+        field_types[i] = ProtoField;
+        field_attrs[i] = .{
             .default_value_ptr = &ProtoField{ .done = false, .required = required },
-            .is_comptime = false,
-            .alignment = @alignOf(bool),
         };
     }
 
-    return @Type(.{ .@"struct" = .{
-        .fields = &fields,
-        .decls = &.{},
-        .is_tuple = false,
-        .layout = .auto,
-    } });
+    return @Struct(
+        .auto,
+        null,
+        &field_names,
+        &field_types,
+        &field_attrs,
+    );
 }
