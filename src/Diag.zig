@@ -20,4 +20,5 @@ pub fn report(self: *const Self) []const u8 {
 pub fn reportToFile(self: *const Self, io: std.Io, file: std.Io.File) std.Io.Writer.Error!void {
     var writer = file.writer(io, &.{});
     try writer.interface.writeAll(self.report());
+    try writer.interface.writeByte('\n');
 }
