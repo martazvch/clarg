@@ -1,5 +1,5 @@
 const std = @import("std");
-const StructField = std.builtin.Type.StructField;
+const StructField = std.lang.Type.Struct.FieldAttributes;
 
 pub fn Arg(arg: anytype) type {
     return struct {
@@ -71,18 +71,18 @@ fn makeDefault(T: type, arg: anytype) ?T {
 }
 
 /// Checks wether an argument needs to be defined (no default value and required argument)
-pub fn mandatory(field: StructField) bool {
-    const def = field.defaultValue().?;
+pub fn mandatory(field: StructField, ty: type) bool {
+    const def = field.defaultValue(ty).?;
     return def.default == null and def.required;
 }
 
 /// Checks wether an argument needs a value. Only `bool` arguments don't need one
-pub fn needsValue(field: StructField) bool {
-    return field.type.Value != bool;
+pub fn needsValue(Field: type) bool {
+    return Field.Value != bool;
 }
 
-pub fn typeStr(field: StructField) []const u8 {
-    return switch (@typeInfo(@field(field.type, "Value"))) {
+pub fn typeStr(Field: type) []const u8 {
+    return switch (@typeInfo(@field(Field, "Value"))) {
         .bool => "",
         .int => "<int>",
         .float => "<float>",
@@ -93,11 +93,11 @@ pub fn typeStr(field: StructField) []const u8 {
     };
 }
 
-pub fn is(field: StructField, kind: enum { positional, cmd }) bool {
+pub fn is(comptime field: StructField, ty: type, kind: enum { positional, cmd }) bool {
     return switch (kind) {
-        .cmd => return @typeInfo(field.type.Value) == .@"struct",
+        .cmd => return @typeInfo(ty.Value) == .@"struct",
         .positional => {
-            const def = field.defaultValue() orelse return false;
+            const def = field.defaultValue(ty) orelse return false;
             return def.positional;
         },
     };
@@ -111,16 +111,17 @@ pub fn maxLen(Args: type) usize {
     }
 
     var len: usize = 0;
+    const info = @typeInfo(Args).@"struct";
 
-    inline for (@typeInfo(Args).@"struct".fields) |field| {
+    inline for (info.field_names, info.field_types, info.field_attrs) |name, ty, attr| {
         // +1 for space between name and type
-        var field_len = typeStr(field).len + 1;
-        if (field.defaultValue()) |def| if (@field(def, "short") != null) {
+        var field_len = typeStr(ty).len + 1;
+        if (attr.defaultValue(ty)) |def| if (@field(def, "short") != null) {
             // 4 for this: '-c, ' and 1 for space between name and type
             field_len += 4;
         };
 
-        len = @max(len, field.name.len + field_len);
+        len = @max(len, name.len + field_len);
     }
 
     return len;
@@ -131,31 +132,31 @@ pub fn ParsedArgs(Args1: type) type {
     const Args = ArgsWithHelp(Args1);
 
     const info = @typeInfo(Args).@"struct";
-    var field_names: [info.fields.len][]const u8 = undefined;
-    var field_types: [info.fields.len]type = undefined;
-    var field_attrs: [info.fields.len]std.builtin.Type.StructField.Attributes = undefined;
+    var field_names: [info.field_names.len][]const u8 = undefined;
+    var field_types: [info.field_types.len]type = undefined;
+    var field_attrs: [info.field_attrs.len]std.builtin.Type.Struct.FieldAttributes = undefined;
 
-    inline for (info.fields, 0..) |f, i| {
+    inline for (info.field_names, info.field_types, info.field_attrs, 0..) |name, ty, attr, i| {
         const T, const val = b: {
             // We're in this case when parsing a subcommand
             // When declared, the `Value` field is computed and types are no longer arg.Arg(...)
             // but the raw type inside
-            if (@typeInfo(f.type) != .@"struct") {
-                break :b .{ f.type, f.default_value_ptr };
+            if (@typeInfo(ty) != .@"struct") {
+                break :b .{ ty, attr.default_value_ptr };
             }
 
             // Get value's type
-            const Value = f.type.Value;
-            const def = f.type.default orelse {
+            const Value = ty.Value;
+            const def = ty.default orelse {
                 // If no default value, we emit a `null` casted to the correct type
-                if (is(f, .cmd)) {
-                    const T = ParsedArgs(f.type.Value);
+                if (is(attr, ty, .cmd)) {
+                    const T = ParsedArgs(ty.Value);
                     break :b .{ ?T, @as(?T, null) };
                 }
 
                 // If there is a default value of the Arg structure (Arg(..) = .{...})
                 // we check if the argument is required. If so, we don't mark it's type as optional
-                if (f.defaultValue()) |default| {
+                if (attr.defaultValue(ty)) |default| {
                     // If we parse a subcommand, there are no struct anymore but the raw type
                     if (@typeInfo(@TypeOf(default)) == .@"struct") {
                         if (default.required) {
@@ -172,7 +173,7 @@ pub fn ParsedArgs(Args1: type) type {
         };
 
         // https://ziggit.dev/t/error-comptime-dereference-requires-0-const-u8-to-have-a-well-defined-layout/8200/2
-        field_names[i] = f.name;
+        field_names[i] = name;
         field_types[i] = T;
         field_attrs[i] = .{
             .default_value_ptr = if (@TypeOf(val) == ?*const anyopaque)
@@ -200,27 +201,27 @@ pub fn ArgsWithHelp(Args: type) type {
     }
     const info = @typeInfo(Args).@"struct";
 
-    inline for (info.fields) |f| {
-        if (std.mem.eql(u8, f.name, "help")) {
+    inline for (info.field_names) |name| {
+        if (std.mem.eql(u8, name, "help")) {
             return Args;
         }
     }
 
-    var field_names: [info.fields.len + 1][]const u8 = undefined;
-    var field_types: [info.fields.len + 1]type = undefined;
-    var field_attrs: [info.fields.len + 1]StructField.Attributes = undefined;
+    var field_names: [info.field_names.len + 1][]const u8 = undefined;
+    var field_types: [info.field_types.len + 1]type = undefined;
+    var field_attrs: [info.field_attrs.len + 1]StructField = undefined;
 
-    inline for (info.fields, 0..) |f, i| {
-        field_names[i] = f.name;
-        field_types[i] = f.type;
+    inline for (info.field_names, info.field_types, info.field_attrs, 0..) |name, ty, attr, i| {
+        field_names[i] = name;
+        field_types[i] = ty;
         field_attrs[i] = .{
-            .default_value_ptr = f.default_value_ptr,
+            .default_value_ptr = attr.default_value_ptr,
         };
     }
 
-    field_names[info.fields.len] = "help";
-    field_types[info.fields.len] = Arg(bool);
-    field_attrs[info.fields.len] = .{
+    field_names[info.field_names.len] = "help";
+    field_types[info.field_types.len] = Arg(bool);
+    field_attrs[info.field_attrs.len] = .{
         .default_value_ptr = &Arg(bool){
             .desc = "Prints this help and exit",
             .short = 'h',

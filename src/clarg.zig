@@ -77,7 +77,7 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, comptime config: Config) AllEr
     var parsed_positional: usize = 0;
     var res = ParsedArgs{};
     var proto: Proto(arg.ArgsWithHelp(Args)) = .{};
-    const infos = @typeInfo(arg.ArgsWithHelp(Args)).@"struct";
+    const info = @typeInfo(arg.ArgsWithHelp(Args)).@"struct";
 
     cmd: {
         arg: while (self.current < self.args.len) {
@@ -108,10 +108,10 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, comptime config: Config) AllEr
             snakeFromKebab(scratch);
 
             if (!options_started and arg_parsed.is_cmd) {
-                inline for (infos.fields) |field| {
-                    if (comptime arg.is(field, .cmd)) {
-                        if (std.mem.eql(u8, field.name, scratch)) {
-                            @field(res, field.name) = try self.parseCmd(field.type.Declared, diag, config);
+                inline for (info.field_names, info.field_types, info.field_attrs) |fname, ty, attr| {
+                    if (comptime arg.is(attr, ty, .cmd)) {
+                        if (std.mem.eql(u8, fname, scratch)) {
+                            @field(res, fname) = try self.parseCmd(ty.Declared, diag, config);
                             break :cmd;
                         }
                     }
@@ -120,35 +120,35 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, comptime config: Config) AllEr
 
             options_started = true;
 
-            inline for (infos.fields) |field| {
-                if (matchField(field, scratch, arg_parsed.is_short)) {
-                    if (@field(proto.fields, field.name).done) {
+            inline for (info.field_names, info.field_types, info.field_attrs) |fname, ty, attr| {
+                if (matchField(fname, ty, attr, scratch, arg_parsed.is_short)) {
+                    if (@field(proto.fields, fname).done) {
                         try diag.print("Already parsed argument '{s}' (or its long/short version)", .{full_name});
                         return error.AlreadyParsed;
                     } else {
                         // Check if it's a positional, can't use them by their name
-                        if (field.defaultValue()) |def| if (def.positional) {
+                        if (attr.defaultValue(ty)) |def| if (def.positional) {
                             try diag.print("Can't use '{s}' by it's name as it's a positional argument", .{full_name});
                             return error.NamedPositional;
                         };
 
                         if (arg_parsed.value) |value| {
-                            @field(res, field.name) = argValue(field.type.Value, value) catch {
-                                try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), full_name });
+                            @field(res, fname) = argValue(ty.Value, value) catch {
+                                try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(ty), full_name });
                                 return error.WrongValueType;
                             };
                         }
                         // If it's a boolean flag, no value needed
-                        else if (field.type.Value == bool) {
-                            @field(res, field.name) = true;
+                        else if (ty.Value == bool) {
+                            @field(res, fname) = true;
                         }
                         // If the value was needed
-                        else if (arg.needsValue(field)) {
-                            try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(field), full_name });
+                        else if (arg.needsValue(ty)) {
+                            try diag.print("Expect a value of type '{s}' for argument '{s}'", .{ arg.typeStr(ty), full_name });
                             return error.ExpectValue;
                         }
 
-                        @field(proto.fields, field.name).done = true;
+                        @field(proto.fields, fname).done = true;
                         continue :arg;
                     }
                 }
@@ -157,20 +157,20 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, comptime config: Config) AllEr
             // Positional
             var count: usize = 0;
 
-            inline for (infos.fields) |field| {
-                if (field.defaultValue()) |def| {
+            inline for (info.field_names, info.field_types, info.field_attrs) |fname, ty, attr| {
+                if (attr.defaultValue(ty)) |def| {
                     if (def.positional) {
                         if (count == parsed_positional) {
-                            @field(res, field.name) = argValue(@field(field.type, "Value"), name) catch {
+                            @field(res, fname) = argValue(@field(ty, "Value"), name) catch {
                                 try diag.print(
                                     "Expect a value of type '{s}' for positional argument '--{s}'",
-                                    .{ arg.typeStr(field), kebabFromSnake(field.name) },
+                                    .{ arg.typeStr(ty), kebabFromSnake(fname) },
                                 );
                                 return error.WrongValueType;
                             };
 
                             parsed_positional += 1;
-                            @field(proto.fields, field.name).done = true;
+                            @field(proto.fields, fname).done = true;
                             continue :arg;
                         }
 
@@ -192,16 +192,16 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, comptime config: Config) AllEr
     return res;
 }
 
-fn matchField(field: Type.StructField, arg_name: []const u8, short: bool) bool {
+fn matchField(name: []const u8, ty: type, comptime attr: Type.Struct.FieldAttributes, arg_name: []const u8, short: bool) bool {
     if (short) {
-        return matchFieldShort(field, arg_name[0]);
+        return matchFieldShort(ty, attr, arg_name[0]);
     }
 
-    return std.mem.eql(u8, field.name, arg_name);
+    return std.mem.eql(u8, name, arg_name);
 }
 
-fn matchFieldShort(field: Type.StructField, arg_name: u8) bool {
-    if (field.defaultValue()) |def| {
+fn matchFieldShort(ty: type, comptime attr: Type.Struct.FieldAttributes, arg_name: u8) bool {
+    if (attr.defaultValue(ty)) |def| {
         if (def.short) |short| {
             return short == arg_name;
         }

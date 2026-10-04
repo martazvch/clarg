@@ -14,11 +14,11 @@ pub fn Proto(T: type) type {
         pub fn validate(self: *@This(), diag: *Diag) Error!void {
             const proto_info = @typeInfo(@TypeOf(self.fields)).@"struct";
 
-            inline for (proto_info.fields) |f| {
-                const field = @field(self.fields, f.name);
+            inline for (proto_info.field_names) |name| {
+                const field = @field(self.fields, name);
 
                 if (!field.done and field.required) {
-                    try diag.print("Missing required argument '--{s}'", .{kebabFromSnake(f.name)});
+                    try diag.print("Missing required argument '--{s}'", .{kebabFromSnake(name)});
                     return error.err;
                 }
             }
@@ -38,17 +38,17 @@ fn ProtoFields(T: type) type {
 
     const info = @typeInfo(T).@"struct";
 
-    var field_names: [info.fields.len][]const u8 = undefined;
-    var field_types: [info.fields.len]type = undefined;
-    var field_attrs: [info.fields.len]std.builtin.Type.StructField.Attributes = undefined;
+    var field_names: [info.field_names.len][]const u8 = undefined;
+    var field_types: [info.field_types.len]type = undefined;
+    var field_attrs: [info.field_attrs.len]std.builtin.Type.Struct.FieldAttributes = undefined;
 
-    inline for (info.fields, 0..) |f, i| {
-        const required = if (f.defaultValue()) |def|
+    inline for (info.field_names, info.field_types, info.field_attrs, 0..) |name, ty, attr, i| {
+        const required = if (attr.defaultValue(ty)) |def|
             def.required
         else
             false;
 
-        field_names[i] = f.name;
+        field_names[i] = name;
         field_types[i] = ProtoField;
         field_attrs[i] = .{
             .default_value_ptr = &ProtoField{ .done = false, .required = required },

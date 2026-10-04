@@ -361,7 +361,7 @@ fn printErr(comptime fn_name: []const u8, got: []const u8, expect: []const u8) E
     }
 
     try writer.writeAll(NoColor);
-    const underline = "-" ** (fn_name.len + 11);
+    const underline: [fn_name.len + 11]u8 = @splat('-');
 
     std.debug.print("Difference on char {}, expect '{c}' but got '{c}'\n", .{ err_idx, expect[err_idx], got[err_idx] });
     std.debug.print("Diff in '{s}':\n{s}\n{s}\n{s}", .{ fn_name, underline, writer.buffered(), underline });

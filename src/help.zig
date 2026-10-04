@@ -36,8 +36,8 @@ fn printUsage(info: Type.Struct, writer: *Writer) !void {
 
     // Check if there is at least one command
     var found = false;
-    inline for (info.fields) |field| {
-        if (!found and @typeInfo(field.type.Value) == .@"struct") {
+    inline for (info.field_types) |ty| {
+        if (!found and @typeInfo(ty.Value) == .@"struct") {
             found = true;
             try writer.print("  {s} [commands] [options] [args]\n", .{clarg.prog});
         }
@@ -60,18 +60,18 @@ fn printDesc(Args: type, writer: *Writer) !void {
 fn printCmds(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void {
     var found = false;
 
-    inline for (info.fields) |field| {
-        if (arg.is(field, .cmd)) {
+    inline for (info.field_names, info.field_types, info.field_attrs) |name, ty, attr| {
+        if (arg.is(attr, ty, .cmd)) {
             if (!found) {
                 try writer.writeAll("Commands:\n");
             }
             found = true;
 
-            const name = comptime kebabFromSnake(field.name);
-            const name_text = "  " ++ name;
+            const kebab_name = comptime kebabFromSnake(name);
+            const name_text = "  " ++ kebab_name;
 
             // Case: cmd: Arg(CmdArgs) = .{}
-            if (field.defaultValue()) |def_val| {
+            if (attr.defaultValue(ty)) |def_val| {
                 const desc_field = def_val.desc;
                 // Case: cmd: Arg(CmdArgs) = .{ .desc = "foo" }
                 if (desc_field.len > 0) {
@@ -82,7 +82,7 @@ fn printCmds(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void 
             }
             // Case: cmd: Arg(CmdArgs)
             else {
-                try writer.writeAll("  " ++ name ++ "\n");
+                try writer.writeAll("  " ++ kebab_name ++ "\n");
             }
         }
     }
@@ -93,19 +93,19 @@ fn printCmds(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void 
 fn printPositionals(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void {
     var found = false;
 
-    inline for (info.fields) |field| {
+    inline for (info.field_types, info.field_attrs) |ty, attr| {
         comptime var name_text: []const u8 = "  ";
 
         // If positional, it is case: arg: Arg(bool) = .{ .positional = true }
         // so always a default value
-        if (comptime arg.is(field, .positional)) {
-            const def_val = field.defaultValue().?;
+        if (comptime arg.is(attr, ty, .positional)) {
+            const def_val = attr.defaultValue(ty).?;
             if (!found) {
                 try writer.writeAll("Arguments:\n");
             }
             found = true;
 
-            comptime name_text = name_text ++ arg.typeStr(field);
+            comptime name_text = name_text ++ arg.typeStr(ty);
 
             const desc_field = @field(def_val, "desc");
             // Case: arg: Arg(bool) = .{ .desc = "foo" }
@@ -115,7 +115,7 @@ fn printPositionals(info: Type.Struct, writer: *Writer, comptime max_len: usize)
                 try writer.print("{s}", .{name_text});
             }
 
-            try addExtraInfo(writer, field, max_len, .{ .required = false, .pad = desc_field.len > 0 });
+            try addExtraInfo(writer, ty, attr, max_len, .{ .required = false, .pad = desc_field.len > 0 });
         }
     }
 
@@ -125,20 +125,20 @@ fn printPositionals(info: Type.Struct, writer: *Writer, comptime max_len: usize)
 fn printOptions(info: Type.Struct, writer: *Writer, comptime max_len: usize) !void {
     try writer.writeAll("Options:\n");
 
-    inline for (info.fields) |field| {
+    inline for (info.field_names, info.field_types, info.field_attrs) |name, ty, attr| {
         comptime var name_text: []const u8 = "  ";
 
-        if (comptime !(arg.is(field, .cmd) or arg.is(field, .positional))) {
+        if (comptime !(arg.is(attr, ty, .cmd) or arg.is(attr, ty, .positional))) {
             var pad = false;
 
             // Case: arg: Arg(bool) = .{}
-            if (field.defaultValue()) |def_val| {
+            if (attr.defaultValue(ty)) |def_val| {
                 if (def_val.short) |short| {
                     name_text = name_text ++ "-" ++ .{short} ++ ", ";
                 }
 
-                const type_text = comptime arg.typeStr(field);
-                comptime name_text = name_text ++ kebabFromSnakeDash(field.name) ++ if (type_text.len > 0) " " ++ type_text else "";
+                const type_text = comptime arg.typeStr(ty);
+                comptime name_text = name_text ++ kebabFromSnakeDash(name) ++ if (type_text.len > 0) " " ++ type_text else "";
 
                 const desc_field = def_val.desc;
                 // Case: arg: Arg(bool) = .{ .desc = "foo" }
@@ -151,10 +151,10 @@ fn printOptions(info: Type.Struct, writer: *Writer, comptime max_len: usize) !vo
             }
             // Case: arg: Arg(bool)
             else {
-                try writer.writeAll("  " ++ comptime kebabFromSnakeDash(field.name) ++ " " ++ arg.typeStr(field));
+                try writer.writeAll("  " ++ comptime kebabFromSnakeDash(name) ++ " " ++ arg.typeStr(ty));
             }
 
-            try addExtraInfo(writer, field, max_len, .{ .pad = pad });
+            try addExtraInfo(writer, ty, attr, max_len, .{ .pad = pad });
         }
     }
 }
@@ -165,7 +165,7 @@ const ExtraOpts = struct {
     additional: bool = true,
     pad: bool,
 };
-fn addExtraInfo(writer: *Writer, field: Type.StructField, comptime max_len: usize, opts: ExtraOpts) !void {
+fn addExtraInfo(writer: *Writer, field: type, comptime attr: Type.Struct.FieldAttributes, comptime max_len: usize, opts: ExtraOpts) !void {
     var buf: [1024]u8 = undefined;
     var w = std.Io.Writer.fixed(&buf);
 
@@ -173,7 +173,7 @@ fn addExtraInfo(writer: *Writer, field: Type.StructField, comptime max_len: usiz
         try printDefault(&w, field);
     }
     if (opts.required) {
-        try printRequired(&w, field);
+        try printRequired(&w, field, attr);
     }
     const extra = w.buffered();
     if (extra.len > 0) {
@@ -193,8 +193,8 @@ fn addExtraInfo(writer: *Writer, field: Type.StructField, comptime max_len: usiz
 }
 
 /// Prints argument default value if one
-fn printDefault(writer: *Writer, field: Type.StructField) !void {
-    if (field.type.default) |default| {
+fn printDefault(writer: *Writer, Field: type) !void {
+    if (Field.default) |default| {
         const Def = @TypeOf(default);
         const info = @typeInfo(Def);
 
@@ -211,23 +211,23 @@ fn printDefault(writer: *Writer, field: Type.StructField) !void {
 }
 
 /// Prints argument default value if one
-fn printRequired(writer: *Writer, field: Type.StructField) !void {
-    if (field.defaultValue()) |def| {
+fn printRequired(writer: *Writer, ty: type, comptime field: Type.Struct.FieldAttributes) !void {
+    if (field.defaultValue(ty)) |def| {
         if (def.required) {
             try writer.writeAll(" [required]");
         }
     }
 }
 
-fn additionalData(writer: *Writer, field: Type.StructField, comptime padding: usize) !void {
-    const pad = " " ** (padding + 6);
+fn additionalData(writer: *Writer, Field: type, comptime padding: usize) !void {
+    const pad: [padding + 6]u8 = @splat(' ');
 
-    switch (@typeInfo(@field(field.type, "Value"))) {
-        .@"enum" => |infos| {
+    switch (@typeInfo(@field(Field, "Value"))) {
+        .@"enum" => |info| {
             try writer.print("{s}Supported values:\n", .{pad});
 
-            inline for (infos.fields) |f| {
-                try writer.print("{s}    {s}\n", .{ pad, f.name });
+            inline for (info.field_names) |name| {
+                try writer.print("{s}    {s}\n", .{ pad, name });
             }
         },
         else => {},
