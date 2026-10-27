@@ -122,6 +122,15 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, comptime config: Config) AllEr
 
             inline for (info.field_names, info.field_types, info.field_attrs) |fname, ty, attr| {
                 if (matchField(fname, ty, attr, scratch, arg_parsed.is_short)) {
+                    // Due to argument parsing, we could match an option even if user didn't provide '-' or '--' prefix
+                    if (full_name[0] != '-') {
+                        try diag.print(
+                            "Argument must start with '-' or '--', found '{s}'",
+                            .{full_name},
+                        );
+                        return error.UnknownArg;
+                    }
+
                     if (@field(proto.fields, fname).done) {
                         try diag.print("Already parsed argument '{s}' (or its long/short version)", .{full_name});
                         return error.AlreadyParsed;

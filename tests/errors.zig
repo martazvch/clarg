@@ -40,6 +40,14 @@ test "value args" {
     try clargTest(Args, .{}, &.{ "ray", "--arg-3=true" }, "Expect a value of type '<float>' for argument '--arg-3'");
 }
 
+test "missing dashes" {
+    const Args = struct {
+        arg1: Arg(bool) = .{ .required = false },
+        arg2: Arg(6) = .{ .required = true },
+    };
+    try clargTest(Args, .{}, &.{ "data-visu", "arg1" }, "Argument must start with '-' or '--', found 'arg1'");
+}
+
 test "missing required" {
     const Args = struct {
         arg1: Arg(bool) = .{ .required = false },

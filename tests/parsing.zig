@@ -195,7 +195,7 @@ test "commands" {
     }
 
     {
-        const args = [_][:0]const u8{ "prog", "cmd-compile", "-p=myplace", "print-ir" };
+        const args = [_][:0]const u8{ "prog", "cmd-compile", "-p=myplace", "--print-ir" };
         var diag: Diag = .empty;
         const parsed = try clarg.parse(CmdArgs, &args, &diag, .{});
 
