@@ -35,6 +35,7 @@ Clarg support all of the following:
     - String
     - Enums
 - Positional arguments
+- Disable argument with '-/' or '--/'
 - Required argument
 - Sub-commands and nested sub-commands
 - Error reporting
@@ -119,7 +120,7 @@ const Args = struct {
 };
 ```
 
-If you run `zig build run -- -h` or `zig build run -- --help` you get the following:
+If you run `./prog -h` or `./prog --help` you get the following:
 
 ```
 Usage:
@@ -162,7 +163,7 @@ Options:
   -h, --help               Prints this help and exit
 ```
 
-And if you run `zig build run -- cmd -h` you get:
+And if you run `./prog cmd -h` you get:
 
 ```
 Usage:
@@ -178,6 +179,13 @@ Options:
                             div
   -h, --help
 ```
+
+## Disabling argument
+
+Disabling argument allow you to temporarly delete an argument by prefixing it with '-/' or '--/'.
+In practise, it's really useful to not spend all your time deleting and rewriting entire arguments
+when just experimenting.
+Syntax is: `./prog -/a=6 --/dump-ir`
 
 ## TODO
 

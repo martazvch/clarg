@@ -118,6 +118,11 @@ fn parseCmd(self: *Self, Args: type, diag: *Diag, comptime config: Config) AllEr
                 }
             }
 
+            // Allow user to temporarly disable an argument
+            if (std.mem.startsWith(u8, full_name, "-/") or std.mem.startsWith(u8, full_name, "--/")) {
+                continue :arg;
+            }
+
             options_started = true;
 
             inline for (info.field_names, info.field_types, info.field_attrs) |fname, ty, attr| {

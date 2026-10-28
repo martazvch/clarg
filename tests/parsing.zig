@@ -294,3 +294,35 @@ test "positional with dashes" {
         try expect(std.mem.eql(u8, parsed.file.?, "file_path_with_dash.txt"));
     }
 }
+
+test "disabled" {
+    const Args = struct {
+        arg1: Arg(bool),
+        arg2: Arg(i64) = .{ .short = 'a' },
+    };
+
+    {
+        const args = [_][:0]const u8{ "prog", "--/arg1", "--arg2=54" };
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
+
+        try expect(parsed.arg1 == false);
+        try expect(parsed.arg2.? == 54);
+    }
+    {
+        const args = [_][:0]const u8{ "prog", "--arg1", "--/arg2=54" };
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
+
+        try expect(parsed.arg1 == true);
+        try expect(parsed.arg2 == null);
+    }
+    {
+        const args = [_][:0]const u8{ "prog", "--/arg1", "-/a=54" };
+        var diag: Diag = .empty;
+        const parsed = try clarg.parse(Args, &args, &diag, .{});
+
+        try expect(parsed.arg1 == false);
+        try expect(parsed.arg2 == null);
+    }
+}
