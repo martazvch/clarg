@@ -35,7 +35,7 @@ Clarg support all of the following:
     - String
     - Enums
 - Positional arguments
-- Disable argument with '-/' or '--/'
+- Disable argument with `-/` or `--/`
 - Required argument
 - Sub-commands and nested sub-commands
 - Error reporting
